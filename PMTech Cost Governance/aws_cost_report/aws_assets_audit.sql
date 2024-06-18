@@ -1,22 +1,912 @@
 -- Databricks notebook source
 -- MAGIC %md
--- MAGIC TEST
+-- MAGIC # All AWS Assets 
 
 -- COMMAND ----------
 
+-- DBTITLE 1,1. (pending) - pull from unity catlog
+refresh table costusage.dev_usage.aws_assets;
+select * from costusage.dev_usage.aws_assets;
+select * from costusage.source_usage.dim_aws_skupricing;
 
-CREATE EXTERNAL TABLE  IF NOT EXISTS costusage.dev_usage.test_tagallocate
+ALTER TABLE costusage.aws_usage.fact_awscur
+SET TBLPROPERTIES ('delta.columnMapping.mode' = 'name');
+
+ALTER TABLE costusage.aws_usage.fact_awscur
+DROP COLUMN ri_rate,
+ sp_rate,
+ ri_net_effective_cost,
+ sp_net_effective_cost,
+ ri_effective_cost,
+ sp_effective_cost,
+ original_tagcostgroup2,
+ original_tagproject;
+
+ALTER TABLE costusage.aws_usage.fact_awscur
+ADD COLUMN (product_sku STRING);
+
+ALTER TABLE costusage.aws_usage.fact_awscur_previous
+SET TBLPROPERTIES ('delta.columnMapping.mode' = 'name');
+
+ALTER TABLE costusage.aws_usage.fact_awscur_previous
+DROP COLUMN  original_tagcostgroup2,
+ original_tagproject;
+
+
+-- COMMAND ----------
+
+CREATE OR REPLACE VIEW costusage.aws_usage.v_aws_assets AS 
+SELECT
+  year
+, month
+, DAY(last_day(usage_time)) * 24 hours_of_month
+, usage_time
+, owner_id
+, tag_costgroup2
+, tag_name
+, tag_sp
+, tag_owner
+, tag_clusterid
+, tag_clustername
+, tag_env
+, tag_project
+, tag_client
+, tag_agency
+, tag_product
+, tag_scope
+, tag_italyambiente
+, tag_italycostgroup1
+, tag_italycostgroup2
+, tag_italycliente
+, resource_id
+, aws_service
+, service_name
+, service_family
+, service_operation
+, service_region
+, service_os
+, instance_family
+, instance_type
+, product_marketoption
+, license_model
+, product_tenancy
+, pricing_term
+, pricing_unit
+, purchase_option
+, database_edition
+, database_engine
+, deployment_option
+, usage_type
+, item_type
+, usage_amount
+, net_unblended_cost
+, ondemand_cost
+, ondemand_rate
+, product_sku
+, sp.partial_1yr_csp_rate as 1p_csp_rate
+, sp.noupfront_1yr_csp_rate as 1n_csp_rate
+from costusage.${environment}_usage.fact_awscur_previous cur 
+LEFT JOIN costusage.source_usage.dim_aws_skupricing sp ON 
+cur.aws_service = sp.product_servicecode 
+and cur.service_family = sp.product_product_family
+AND (cur.service_os = sp.product_operating_system) 
+AND (cur.service_region = sp.product_region_code) 
+AND (cur.usage_type = sp.line_item_usage_type) 
+-- and (cur.ondemand_rate = sp.pricing_public_on_demand_rate)
+WHERE (1 = 1)
+-- and cur.usage_time >= date_format(dateadd(Month, -1, current_date()), 'yyyy-MM-01')
+and cur.pricing_term <> 'Spot'
+and cur.aws_service IN ('AmazonES', 'AmazonEC2', 'AmazonRDS', 'AmazonElastiCache', 'AmazonRedshift')
+and (cur.service_family LIKE '%Instance%' OR cur.service_family LIKE '%Serverless%')
+
+-- SELECT
+-- count(1)
+-- from costusage.${environment}_usage.fact_awscur cur 
+-- WHERE (1 = 1)
+-- and cur.usage_time >= date_format(dateadd(Month, -1, current_date()), 'yyyy-MM-01')
+-- and cur.pricing_term <> 'Spot'
+-- and cur.aws_service IN ('AmazonES', 'AmazonEC2', 'AmazonRDS', 'AmazonElastiCache', 'AmazonRedshift')
+-- and (cur.service_family LIKE '%Instance%' OR cur.service_family LIKE '%Serverless%')
+-- union all
+-- SELECT
+-- count(1)
+-- from costusage.${environment}_usage.fact_awscur cur 
+-- LEFT JOIN costusage.source_usage.dim_aws_skupricing sp ON 
+-- cur.aws_service = sp.product_servicecode 
+-- and cur.service_family = sp.product_product_family
+-- AND (cur.service_os = sp.product_operating_system) 
+-- AND (cur.service_region = sp.product_region_code) 
+-- AND (cur.usage_type = sp.line_item_usage_type) 
+-- and (cur.ondemand_rate = sp.pricing_public_on_demand_rate)
+-- WHERE (1 = 1)
+-- and cur.usage_time >= date_format(dateadd(Month, -1, current_date()), 'yyyy-MM-01')
+-- and cur.pricing_term <> 'Spot'
+-- and cur.aws_service IN ('AmazonES', 'AmazonEC2', 'AmazonRDS', 'AmazonElastiCache', 'AmazonRedshift')
+-- and (cur.service_family LIKE '%Instance%' OR cur.service_family LIKE '%Serverless%')
+
+-- select distinct item_type,usage_type,service_family,pricing_unit,pricing_term
+-- from costusage.${environment}_usage.fact_awscur_previous
+-- --IDENTIFIER('costusage' || '.' || :environment || '_usage.fact_awscur_previous') 
+-- WHERE (1 = 1)
+-- and usage_time >= date_format(dateadd(Month, -1, current_date()), 'yyyy-MM-01')
+-- -- and pricing_term <> 'Spot'
+-- and aws_service IN ('AmazonES', 'AmazonEC2', 'AmazonRDS', 'AmazonElastiCache', 'AmazonRedshift')
+-- and (service_family LIKE '%Instance%' OR service_family LIKE '%Serverless%')
+
+
+-- COMMAND ----------
+
+select * from costusage.aws_usage.v_aws_assets where `1p_csp_rate` is not null
+
+-- COMMAND ----------
+
+-- DBTITLE 1,2. csv pulled from athena - need to add Database Engine and Edition, tag_owner
+DROP TABLE costusage.dev_usage.aws_assets
+CREATE EXTERNAL TABLE  IF NOT EXISTS costusage.dev_usage.aws_assets
 USING csv
 OPTIONS (
   'header' 'true',
-  'path' 's3://pm-epsilon-athena/databricks/dim_tables/aws_costusage/customtags_test.csv',
+  'path' 's3://pm-epsilon-athena/databricks/dim_tables/aws_costusage/aws_assets_2024.csv',
   'mergeSchema' 'true'
 );
+REFRESH TABLE costusage.dev_usage.aws_assets;
 
 -- COMMAND ----------
 
-REFRESH TABLE costusage.dev_usage.test_tagallocate;
-SELECT * from costusage.dev_usage.test_tagallocate;
+-- DBTITLE 1,2.1 create silvertable -fact_aws_assets  for performance
+DROP TABLE IF EXISTS costusage.dev_usage.fact_aws_assets;
+CREATE OR REPLACE TABLE costusage.dev_usage.fact_aws_assets
+USING DELTA
+LOCATION 's3://pm-epsilon-athena/databricks/dev/dev_usage/fact_aws_assets/'
+AS
+select
+  line_item_usage_account_id,
+  hours_of_month,
+  tag_costgroup2,
+  case
+    when tag_name is null
+    and resource_id not like 'i-%' then resource_id
+    else tag_name
+  end tag_name,
+  resource_id,
+  tag_sp,
+  product_servicecode,
+  product_product_family,
+  product_operating_system,
+  product_region_code,
+  line_item_usage_type,
+  partial_1yr_csp_rate,
+  noupfront_1yr_csp_rate,
+  pricing_public_on_demand_rate,
+  sum(usage_amount) usage_amount,
+  sum(pricing_public_on_demand_rate * usage_amount) ondemand_cost
+from
+  costusage.dev_usage.aws_assets
+group by
+  line_item_usage_account_id,resource_id,
+  hours_of_month,
+  tag_costgroup2,  
+  case
+    when tag_name is null
+    and resource_id not like 'i-%' then resource_id
+    else tag_name
+  end,
+  tag_sp,
+  product_servicecode,
+  product_product_family,
+  product_operating_system,
+  product_region_code,
+  line_item_usage_type,
+  partial_1yr_csp_rate,
+  noupfront_1yr_csp_rate,
+  pricing_public_on_demand_rate
+
+-- COMMAND ----------
+
+-- DBTITLE 1,2.2 tag reallocate
+
+update costusage.dev_usage.fact_aws_assets set tag_costgroup2='TITANGERMANY'  where line_item_usage_account_id IN 
+('252701498779') and tag_costgroup2 is  null;
+
+update costusage.dev_usage.fact_aws_assets set tag_costgroup2='DTI-US-DATABRICKS' where tag_name ='workerenv-3339421385882115-09795c84-1c27-4c44-914b-7b77b88380d9-worker';
+
+update costusage.dev_usage.fact_aws_assets set tag_costgroup2='DPR-US-DATABRICKS' where tag_name ='workerenv-2838434924534453-f62b61ea-884d-422f-8960-ec22e9f970a7-worker';
+
+update costusage.dev_usage.fact_aws_assets set tag_costgroup2='INFRASTRUCTURE' where tag_name ='arn:aws:rds:us-east-1:003458622776:db:opswise-ue1t';
+update costusage.dev_usage.fact_aws_assets set tag_costgroup2='DATALAKE' where tag_name ='arn:aws:redshift-serverless:us-east-1:491258057721:workgroup/74f1bb00-772d-4968-83aa-c768efee5b74';
+
+update costusage.dev_usage.fact_aws_assets set tag_costgroup2='OS_COMMONSERVICES' where tag_costgroup2 ='COMMONSERVICES';
+update costusage.dev_usage.fact_aws_assets set tag_costgroup2='OS_AUDIENCE' where tag_costgroup2 ='AUDIENCE';
+
+
+MERGE INTO costusage.dev_usage.fact_aws_assets AS aws
+USING costusage.source_usage.dim_customtags AS dim
+   ON aws.line_item_usage_account_id = dim.name
+   AND dim.original = 'SA' 
+   and dim.type ='owner_id'
+WHEN MATCHED THEN 
+   UPDATE SET aws.tag_costgroup2 = upper(ltrim(rtrim(dim.new)));
+
+MERGE INTO costusage.dev_usage.fact_aws_assets AS aws
+USING costusage.source_usage.dim_customtags AS dim
+   ON aws.line_item_usage_account_id = dim.name
+   AND dim.original = 'CostGroup2' 
+   and dim.type ='owner_id' and aws.tag_costgroup2 is null
+WHEN MATCHED THEN 
+   UPDATE SET aws.tag_costgroup2 = upper(ltrim(rtrim(dim.new)));
+
+MERGE INTO costusage.dev_usage.fact_aws_assets AS aws
+USING costusage.source_usage.dim_customtags AS dim
+   ON aws.tag_costgroup2 = dim.original
+   AND dim.name = 'CostGroup2' 
+   and dim.type ='tags' 
+WHEN MATCHED THEN 
+   UPDATE SET aws.tag_costgroup2 = upper(ltrim(rtrim(dim.new)));
+
+
+MERGE INTO costusage.dev_usage.fact_aws_assets AS aws
+USING costusage.source_usage.dim_customtags AS dim
+   ON aws.resource_id like dim.name
+   and aws.line_item_usage_account_id = dim.original
+   and dim.type ='resource_id' 
+WHEN MATCHED THEN 
+   UPDATE SET aws.tag_costgroup2 = upper(ltrim(rtrim(dim.new)));
+
+select * from  costusage.source_usage.dim_customtags
+
+select * from  costusage.source_usage.dim_accounts
+
+
+-- COMMAND ----------
+
+-- DBTITLE 1,2.3.1 savings rates update for ES,EC,Redshift,OS
+-- update costusage.dev_usage.fact_aws_assets set 
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.124,
+noupfront_1yr_csp_rate=0.128
+where product_servicecode ='AmazonES'
+and product_region_code='us-east-1'
+and line_item_usage_type='ESInstance:r5.large'
+and pricing_public_on_demand_rate=0.186;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.124,
+noupfront_1yr_csp_rate=0.128
+where product_servicecode ='AmazonES'
+and product_region_code='us-east-1'
+and line_item_usage_type='ESInstance:r5.large'
+and pricing_public_on_demand_rate=0.186
+
+-- update costusage.dev_usage.fact_aws_assets set 
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.102,
+noupfront_1yr_csp_rate=0.106,product_operating_system ='NodeUsage:cache.m5.large'
+where product_servicecode ='AmazonElastiCache'
+and product_region_code='us-east-1'
+and line_item_usage_type='NodeUsage:cache.m4.large'
+and pricing_public_on_demand_rate=0.156;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.102,
+noupfront_1yr_csp_rate=0.106,product_operating_system ='NodeUsage:cache.m5.large'
+where product_servicecode ='AmazonElastiCache'
+and product_region_code='us-east-1'
+and line_item_usage_type='NodeUsage:cache.m4.large'
+and pricing_public_on_demand_rate=0.156;
+
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.102,
+noupfront_1yr_csp_rate=0.106
+where product_servicecode ='AmazonElastiCache'
+and product_region_code='us-east-1'
+and line_item_usage_type='NodeUsage:cache.t3.micro'
+and pricing_public_on_demand_rate=0.017;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.011,
+noupfront_1yr_csp_rate=0.106
+where product_servicecode ='AmazonElastiCache'
+and product_region_code='us-east-1'
+and line_item_usage_type='NodeUsage:cache.t3.micro'
+and pricing_public_on_demand_rate=0.017;
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.044,
+noupfront_1yr_csp_rate=0.046
+where product_servicecode ='AmazonElastiCache'
+and product_region_code='us-east-1'
+and line_item_usage_type='NodeUsage:cache.t3.medium'
+and pricing_public_on_demand_rate=0.068;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.044,
+noupfront_1yr_csp_rate=0.046
+where product_servicecode ='AmazonElastiCache'
+and product_region_code='us-east-1'
+and line_item_usage_type='NodeUsage:cache.t3.medium'
+and pricing_public_on_demand_rate=0.068;
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.022,
+noupfront_1yr_csp_rate=0.023,product_operating_system ='NodeUsage:cache.t3.small'
+where product_servicecode ='AmazonElastiCache'
+and product_region_code='us-east-1'
+and line_item_usage_type='NodeUsage:cache.t2.small'
+and pricing_public_on_demand_rate=0.034;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.022,
+noupfront_1yr_csp_rate=0.023,product_operating_system ='NodeUsage:cache.t3.small'
+where product_servicecode ='AmazonElastiCache'
+and product_region_code='us-east-1'
+and line_item_usage_type='NodeUsage:cache.t2.small'
+and pricing_public_on_demand_rate=0.034;
+
+
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.134,
+noupfront_1yr_csp_rate=0.141
+where product_servicecode ='AmazonElastiCache'
+and product_region_code='us-east-1'
+and line_item_usage_type='NodeUsage:cache.r6g.large'
+and pricing_public_on_demand_rate=0.206;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.134,
+noupfront_1yr_csp_rate=0.141
+where product_servicecode ='AmazonElastiCache'
+and product_region_code='us-east-1'
+and line_item_usage_type='NodeUsage:cache.r6g.large'
+and pricing_public_on_demand_rate=0.206;
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.010,
+noupfront_1yr_csp_rate=0.011
+where product_servicecode ='AmazonElastiCache'
+and product_region_code='us-east-1'
+and line_item_usage_type='NodeUsage:cache.t4g.micro'
+and pricing_public_on_demand_rate=0.016;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.010,
+noupfront_1yr_csp_rate=0.011
+where product_servicecode ='AmazonElastiCache'
+and product_region_code='us-east-1'
+and line_item_usage_type='NodeUsage:cache.t4g.micro'
+and pricing_public_on_demand_rate=0.016;
+
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.010,
+noupfront_1yr_csp_rate=0.011
+where product_servicecode ='AmazonElastiCache'
+and product_region_code='us-east-1'
+and line_item_usage_type='NodeUsage:cache.t4g.micro'
+and pricing_public_on_demand_rate=0.016;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.010,
+noupfront_1yr_csp_rate=0.011
+where product_servicecode ='AmazonElastiCache'
+and product_region_code='us-east-1'
+and line_item_usage_type='NodeUsage:cache.t4g.micro'
+and pricing_public_on_demand_rate=0.016;
+
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.012,
+noupfront_1yr_csp_rate=0.013
+where product_servicecode ='AmazonElastiCache'
+and product_region_code='eu-central-1'
+and line_item_usage_type='EUC1-NodeUsage:cache.t3.small'
+and pricing_public_on_demand_rate=0.038;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.012,
+noupfront_1yr_csp_rate=0.013
+where product_servicecode ='AmazonElastiCache'
+and product_region_code='eu-central-1'
+and line_item_usage_type='EUC1-NodeUsage:cache.t3.small'
+and pricing_public_on_demand_rate=0.038;
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.170,
+noupfront_1yr_csp_rate=0.177
+where product_servicecode ='AmazonElastiCache'
+and product_region_code='eu-central-1'
+and line_item_usage_type='EUC1-NodeUsage:cache.r5.large'
+and pricing_public_on_demand_rate=0.26;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.170,
+noupfront_1yr_csp_rate=0.177
+where product_servicecode ='AmazonElastiCache'
+and product_region_code='eu-central-1'
+and line_item_usage_type='EUC1-NodeUsage:cache.r5.large'
+and pricing_public_on_demand_rate=0.26;
+
+-- update costusage.dev_usage.fact_aws_assets set 
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.161,
+noupfront_1yr_csp_rate=0.20,product_operating_system ='0.158'
+where product_servicecode ='AmazonRedshift'
+-- and product_region_code='us-east-1'
+and (line_item_usage_type like '%Node:dc2.large')
+and pricing_public_on_demand_rate=0.25;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.161,
+noupfront_1yr_csp_rate=0.20,product_operating_system ='0.158'
+where product_servicecode ='AmazonRedshift'
+-- and product_region_code='us-east-1'
+and (line_item_usage_type like '%Node:dc2.large')
+and pricing_public_on_demand_rate=0.25;
+
+-- update costusage.dev_usage.fact_aws_assets set 
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.728,
+noupfront_1yr_csp_rate=0.76,product_operating_system ='0.717'
+where product_servicecode ='AmazonRedshift'
+-- and product_region_code='us-east-1'
+and (line_item_usage_type like '%Node:ra3.xlplus')
+and pricing_public_on_demand_rate=1.086;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.728,
+noupfront_1yr_csp_rate=0.76,product_operating_system ='0.717'
+where product_servicecode ='AmazonRedshift'
+-- and product_region_code='us-east-1'
+and (line_item_usage_type like '%Node:ra3.xlplus')
+and pricing_public_on_demand_rate=1.086;
+
+-- update costusage.dev_usage.fact_aws_assets set 
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =2.184,
+noupfront_1yr_csp_rate=2.282,product_operating_system ='2.152'
+where product_servicecode ='AmazonRedshift'
+-- and product_region_code='us-east-1'
+and (line_item_usage_type = 'Node:ra3.4xlarge')
+and pricing_public_on_demand_rate=3.26;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =2.184,
+noupfront_1yr_csp_rate=2.282,product_operating_system ='2.152'
+where product_servicecode ='AmazonRedshift'
+-- and product_region_code='us-east-1'
+and (line_item_usage_type = 'Node:ra3.4xlarge')
+and pricing_public_on_demand_rate=3.26;
+
+-- update costusage.dev_usage.fact_aws_assets set 
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =3.22,
+noupfront_1yr_csp_rate=3.8,product_operating_system ='3.155'
+where product_servicecode ='AmazonRedshift'
+-- and product_region_code='us-east-1'
+and (line_item_usage_type = 'Node:dc2.8xlarge')
+and pricing_public_on_demand_rate=4.8;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =3.22,
+noupfront_1yr_csp_rate=3.8,product_operating_system ='3.155'
+where product_servicecode ='AmazonRedshift'
+-- and product_region_code='us-east-1'
+and (line_item_usage_type = 'USE1-Redshift:ServerlessUsage')
+and pricing_public_on_demand_rate=4.8;
+
+-- update costusage.dev_usage.fact_aws_assets set 
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.375,
+noupfront_1yr_csp_rate=0.375,product_operating_system ='0.375'
+where product_servicecode ='AmazonRedshift'
+-- and product_region_code='us-east-1'
+and (line_item_usage_type = 'USE1-Redshift:ServerlessUsage')
+and pricing_public_on_demand_rate=0.375;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.375,
+noupfront_1yr_csp_rate=0.375,product_operating_system ='0.375'
+where product_servicecode ='AmazonRedshift'
+-- and product_region_code='us-east-1'
+and (line_item_usage_type = 'USE1-Redshift:ServerlessUsage')
+and pricing_public_on_demand_rate=0.375;
+
+
+
+
+-- COMMAND ----------
+
+-- DBTITLE 1,2.3.2 savings rates update for RDS
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.104,
+noupfront_1yr_csp_rate=0.110,product_operating_system ='MySQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code='us-east-1'
+and (line_item_usage_type='InstanceUsage:db.m5.large' OR line_item_usage_type='InstanceUsage:db.m6i.large')
+and pricing_public_on_demand_rate=0.171;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.104,
+noupfront_1yr_csp_rate=0.110,product_operating_system ='MySQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code='us-east-1'
+and (line_item_usage_type='InstanceUsage:db.m5.large' OR line_item_usage_type='InstanceUsage:db.m6i.large')
+and pricing_public_on_demand_rate=0.171;
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.027,
+noupfront_1yr_csp_rate=0.029,product_operating_system ='MySQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code='eu-central-1'
+and (line_item_usage_type='EUC1-InstanceUsage:db.t3.small')
+and pricing_public_on_demand_rate=0.04;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.027,
+noupfront_1yr_csp_rate=0.029 ,product_operating_system ='MySQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code='eu-central-1'
+and (line_item_usage_type='EUC1-InstanceUsage:db.t3.small')
+and pricing_public_on_demand_rate=0.04;
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.024,
+noupfront_1yr_csp_rate=0.025 ,product_operating_system ='MySQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code='eu-central-1'
+and (line_item_usage_type='EUC1-InstanceUsage:db.t4g.small')
+and pricing_public_on_demand_rate=0.037;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.024,
+noupfront_1yr_csp_rate=0.025
+where product_servicecode ='AmazonRDS'
+and product_region_code='eu-central-1'
+and (line_item_usage_type='EUC1-InstanceUsage:db.t4g.small')
+and pricing_public_on_demand_rate=0.037;
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.109,
+noupfront_1yr_csp_rate=0.114,product_operating_system ='PostgreSQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code='us-east-1'
+and (line_item_usage_type='InstanceUsage:db.m5.large' OR line_item_usage_type='InstanceUsage:db.m6i.large')
+and pricing_public_on_demand_rate=0.178;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.109,
+noupfront_1yr_csp_rate=0.114,product_operating_system ='PostgreSQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code='us-east-1'
+and (line_item_usage_type='InstanceUsage:db.m5.large' OR line_item_usage_type='InstanceUsage:db.m6i.large')
+and pricing_public_on_demand_rate=0.178;
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.098,
+noupfront_1yr_csp_rate=0.103,product_operating_system ='PostgreSQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code='us-east-1'
+and (line_item_usage_type='InstanceUsage:db.t3.large')
+and pricing_public_on_demand_rate=0.145;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.098,
+noupfront_1yr_csp_rate=0.103,product_operating_system ='PostgreSQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code='us-east-1'
+and (line_item_usage_type='InstanceUsage:db.t3.large')
+and pricing_public_on_demand_rate=0.145;
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.025,
+noupfront_1yr_csp_rate=0.026,product_operating_system ='PostgreSQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code='us-east-1'
+and (line_item_usage_type='InstanceUsage:db.t3.small')
+and pricing_public_on_demand_rate=0.036;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.025,
+noupfront_1yr_csp_rate=0.026,product_operating_system ='PostgreSQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code='us-east-1'
+and (line_item_usage_type='InstanceUsage:db.t3.small')
+and pricing_public_on_demand_rate=0.036;
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.023,
+noupfront_1yr_csp_rate=0.024,product_operating_system ='MySQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code='us-east-1'
+and (line_item_usage_type='InstanceUsage:db.t3.small')
+and pricing_public_on_demand_rate=0.034;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.023,
+noupfront_1yr_csp_rate=0.024,product_operating_system ='MySQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code='us-east-1'
+and (line_item_usage_type='InstanceUsage:db.t3.small')
+and pricing_public_on_demand_rate=0.034;
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.046,
+noupfront_1yr_csp_rate=0.048,product_operating_system ='MySQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code='us-east-1'
+and ((line_item_usage_type='InstanceUsage:db.t3.medium') or (line_item_usage_type='Multi-AZUsage:db.t3.small'))
+and pricing_public_on_demand_rate=0.068;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.046,
+noupfront_1yr_csp_rate=0.048,product_operating_system ='MySQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code='us-east-1'
+and ((line_item_usage_type='InstanceUsage:db.t3.medium') or (line_item_usage_type='Multi-AZUsage:db.t3.small'))
+and pricing_public_on_demand_rate=0.068;
+
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.011,
+noupfront_1yr_csp_rate=0.012,product_operating_system ='MySQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code like ('us-east-%')
+and (line_item_usage_type like '%InstanceUsage:db.t3.micro')
+and pricing_public_on_demand_rate=0.017;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.011,
+noupfront_1yr_csp_rate=0.012,product_operating_system ='MySQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code like ('us-east-%')
+and (line_item_usage_type like '%InstanceUsage:db.t3.micro')
+and pricing_public_on_demand_rate=0.017;
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.834,
+noupfront_1yr_csp_rate=0.876,product_operating_system ='MySQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code='us-east-1'
+and (line_item_usage_type='InstanceUsage:db.m5.4xl')
+and pricing_public_on_demand_rate=1.368;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.834,
+noupfront_1yr_csp_rate=0.876,product_operating_system ='MySQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code='us-east-1'
+and (line_item_usage_type='InstanceUsage:db.m5.4xl')
+and pricing_public_on_demand_rate=1.368;
+
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.109,
+noupfront_1yr_csp_rate=0.114,product_operating_system ='PostgreSQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code='us-east-1'
+and (line_item_usage_type='Multi-AZUsage:db.m4.large')
+and pricing_public_on_demand_rate=0.178;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.109,
+noupfront_1yr_csp_rate=0.114,product_operating_system ='PostgreSQL -> m5.large'
+where product_servicecode ='AmazonRDS'
+and product_region_code='us-east-1'
+and (line_item_usage_type='Multi-AZUsage:db.m4.large')
+and pricing_public_on_demand_rate=0.178;
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.022,
+noupfront_1yr_csp_rate=0.023,product_operating_system ='MySQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code='us-east-1'
+and (line_item_usage_type='InstanceUsage:db.t4g.small')
+and pricing_public_on_demand_rate=0.032;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.022,
+noupfront_1yr_csp_rate=0.023,product_operating_system ='MySQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code='us-east-1'
+and (line_item_usage_type='InstanceUsage:db.t4g.small')
+and pricing_public_on_demand_rate=0.032;
+
+update costusage.source_usage.dim_aws_skupricing set partial_1yr_csp_rate =0.012,
+noupfront_1yr_csp_rate=0.012,product_operating_system ='PostgreSQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code like ('us-east-%')
+and (line_item_usage_type like '%InstanceUsage:db.t3.micro')
+and pricing_public_on_demand_rate=0.018;
+
+update costusage.dev_usage.fact_aws_assets set partial_1yr_csp_rate =0.012,
+noupfront_1yr_csp_rate=0.013,product_operating_system ='PostgreSQL'
+where product_servicecode ='AmazonRDS'
+and product_region_code like ('us-east-%')
+and (line_item_usage_type like '%InstanceUsage:db.t3.micro')
+and pricing_public_on_demand_rate=0.018;
+
+-- COMMAND ----------
+
+-- DBTITLE 1,3. *get neededsku pricing
+create or replace table costusage.source_usage.dim_aws_skupricing
+USING DELTA
+LOCATION 's3://pm-epsilon-athena/databricks/dim_tables/dim_awssku_pricing'
+AS
+select
+distinct product_servicecode,product_product_family,product_operating_system,product_region_code,line_item_usage_type,partial_1yr_csp_rate,noupfront_1yr_csp_rate,pricing_public_on_demand_rate
+from (
+select d.accountname,d.ownerid,hours_of_month,tag_costgroup2, case when tag_name is null then line_item_usage_type else tag_name end as tag_name,tag_sp,product_servicecode,
+  product_product_family,
+  product_operating_system,
+  product_region_code,
+  line_item_usage_type,
+  partial_1yr_csp_rate,
+  noupfront_1yr_csp_rate,
+  pricing_public_on_demand_rate,
+  usage_amount
+   from 
+(select 
+line_item_usage_account_id,
+  hours_of_month,
+  last_value(tag_costgroup2) over w as tag_costgroup2,
+  tag_costgroup2 as o_tag_costgroup2,  
+  tag_name,
+  last_value(tag_sp) over w as tag_sp,
+  product_servicecode,
+  product_product_family,
+  product_operating_system,
+  product_region_code,
+  line_item_usage_type,
+  partial_1yr_csp_rate,
+  noupfront_1yr_csp_rate,
+  pricing_public_on_demand_rate,
+  usage_amount  
+from
+costusage.dev_usage.fact_aws_assets assets
+WINDOW w as (partition by line_item_usage_account_id,tag_name order by tag_name desc)) a
+left join costusage.source_usage.dim_accounts d
+on a.line_item_usage_account_id=d.ownerid) assets
+group by accountname,ownerid,hours_of_month,tag_costgroup2, tag_name,tag_sp,product_servicecode,
+  product_product_family,
+  product_operating_system,
+  product_region_code,
+  line_item_usage_type,
+  partial_1yr_csp_rate,
+  noupfront_1yr_csp_rate,
+  pricing_public_on_demand_rate
+
+
+-- COMMAND ----------
+
+-- DBTITLE 1,Python Tips: insert aws pricing list from api
+-- MAGIC %python
+-- MAGIC # https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/index.json
+-- MAGIC # https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/region_index.json
+-- MAGIC # https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/us-east-1/index.csv
+-- MAGIC
+-- MAGIC
+-- MAGIC import pandas as pd
+-- MAGIC # from  pyspark library import 
+-- MAGIC # SparkSession
+-- MAGIC from pyspark.sql import SparkSession
+-- MAGIC import numpy as np
+-- MAGIC # Building the SparkSession and name
+-- MAGIC # it :'pandas to spark'
+-- MAGIC spark = SparkSession.builder.appName(
+-- MAGIC   "pandas to spark").getOrCreate()
+-- MAGIC
+-- MAGIC # # URL of the CSV file (example URL, replace with actual URL)
+-- MAGIC # url = 'https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/us-east-1/index.csv'
+-- MAGIC
+-- MAGIC # # Load the CSV file into a DataFrame, skipping the first 5 rows
+-- MAGIC # df = pd.read_csv(url, skiprows=5, header=0)
+-- MAGIC # df = df.fillna(value=np.nan)
+-- MAGIC # df.columns = df.columns.str.replace(' ', '_')
+-- MAGIC # # # Display the DataFrame
+-- MAGIC # # df.head()
+-- MAGIC
+-- MAGIC # # create DataFrame
+-- MAGIC # df_spark = spark.createDataFrame(df)
+-- MAGIC  
+-- MAGIC # # df_spark.show()
+-- MAGIC
+-- MAGIC # df_spark.write.format("delta").mode("overwrite").saveAsTable("costusage.aws_usage.aws_skupricing")
+-- MAGIC
+-- MAGIC # URL of the CSV file (example URL, replace with actual URL)
+-- MAGIC url = 'https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/us-east-2/index.csv'
+-- MAGIC
+-- MAGIC # Load the CSV file into a DataFrame, skipping the first 5 rows
+-- MAGIC df = pd.read_csv(url, skiprows=5, header=0)
+-- MAGIC df = df.fillna(value=np.nan)
+-- MAGIC df.columns = df.columns.str.replace(' ', '_')
+-- MAGIC # # Display the DataFrame
+-- MAGIC # df.head()
+-- MAGIC
+-- MAGIC # create DataFrame
+-- MAGIC df_spark = spark.createDataFrame(df)
+-- MAGIC # Append the DataFrame to the existing table
+-- MAGIC df_spark.write.mode("append").saveAsTable("costusage.aws_usage.aws_skupricing")
+
+-- COMMAND ----------
+
+-- DBTITLE 1,get assoicated rn pricing
+create or replace view costusage.aws_usage.reference_rds_pricing
+as
+select distinct product_servicecode,product_region_code, line_item_usage_type,pricing_public_on_demand_rate,
+aws.sku,
+aws.usagetype,
+aws.Product_Family,
+aws.Instance_Type_Family,
+aws.Instance_Type,
+aws.Current_Generation,
+aws.Database_Engine, 
+aws.Database_Edition, 
+aws.License_Model,
+aws.Deployment_Option,
+re.purchaseoption,
+aws.PricePerUnit as ondemand_rate,
+case when re.PurchaseOption = 'All Upfront' then re.PricePerUnit/12/730 else re.PricePerUnit end as PricePerUnit,
+'Hrs' as Unit,
+re.RateCode
+from costusage.dev_usage.fact_aws_assets as dim
+left join costusage.aws_usage.aws_skupricing aws on
+dim.line_item_usage_type =aws.usageType 
+and dim.product_region_code = aws.Region_Code
+and dim.pricing_public_on_demand_rate = aws.PricePerUnit
+left join costusage.aws_usage.aws_skupricing re
+on aws.sku = re.sku
+and aws.usageType =re.usageType 
+and aws.Region_Code = re.Region_Code
+-- and aws.Database_Engine = re.Database_Engine
+-- -- and aws.Database_Edition =  re.Database_Edition
+-- and aws.License_Model = re.License_Model
+-- and aws.Deployment_Option = re.Deployment_Option
+where aws.TermType ='OnDemand'
+and re.TermType ='Reserved' 
+and((re.Unit ='Hrs' and re.PurchaseOption != 'All Upfront') or 
+(re.Unit ='Quantity' and re.PurchaseOption = 'All Upfront'))  
+and (re.LeaseContractLength ='1yr') 
+and dim.product_servicecode ='AmazonRDS'
+-- and (aws.Database_Edition !='Standard Two' or aws.Database_Edition is null)
+-- and aws.region_Code ='eu-west-1'
+
+
+-- COMMAND ----------
+
+select *  from costusage.aws_usage.reference_rds_pricing where product_region_code ='eu-west-1';
+select *  from costusage.source_usage.dim_aws_skupricing where product_region_code ='eu-west-1';
+select * from costusage.aws_usage.aws_skupricing where  TermType='OnDemand' and PricePerUnit =0.364 and Region_Code ='us-east-1';
+select * from costusage.aws_usage.aws_skupricing where TermType='Reserved'
+Multi-AZUsage:db.m4.large
+
+-- COMMAND ----------
+
+select replace(replace(line_item_usage_type,'t2','t3'),'m4','m5'),* from costusage.dev_usage.fact_aws_assets where partial_1yr_csp_rate is null
+
+-- COMMAND ----------
+
+select * from costusage.source_usage.dim_aws_skupricing where partial_1yr_csp_rate is null
+
+-- COMMAND ----------
+
+merge into costusage.dev_usage.fact_aws_assets as target
+using costusage.aws_usage.reference_rds_pricing as source
+on replace(replace(target.line_item_usage_type,'t2','t3'),'m4','m5')=source.usagetype
+and target.pricing_public_on_demand_rate = source.pricing_public_on_demand_rate
+and target.product_region_code=source.product_region_code
+and target.product_servicecode =source.product_servicecode
+and target.product_servicecode ='AmazonRDS'
+and source.purchaseoption = 'Partial Upfront'
+and source.Database_Engine = target.product_operating_system
+and target.partial_1yr_csp_rate is null
+WHEN MATCHED THEN UPDATE
+SET target.partial_1yr_csp_rate= source.PricePerUnit ;
+
+
+merge into costusage.dev_usage.fact_aws_assets as target
+using costusage.aws_usage.reference_rds_pricing as source
+on replace(replace(target.line_item_usage_type,'t2','t3'),'m4','m5')=source.usagetype
+and target.pricing_public_on_demand_rate = source.pricing_public_on_demand_rate
+and target.product_region_code=source.product_region_code
+and target.product_servicecode =source.product_servicecode
+and target.product_servicecode ='AmazonRDS'
+and source.purchaseoption = 'No Upfront'
+and source.Database_Engine = target.product_operating_system
+and target.partial_1yr_csp_rate is null
+WHEN MATCHED THEN UPDATE
+SET target.noupfront_1yr_csp_rate= source.PricePerUnit ;
+ 
+merge into costusage.source_usage.dim_aws_skupricing as target
+using costusage.aws_usage.reference_rds_pricing as source
+on replace(replace(target.line_item_usage_type,'t2','t3'),'m4','m5')=source.usagetype
+and target.pricing_public_on_demand_rate = source.pricing_public_on_demand_rate
+and target.product_region_code=source.product_region_code
+and target.product_servicecode =source.product_servicecode
+and target.product_servicecode ='AmazonRDS'
+and source.purchaseoption = 'Partial Upfront'
+WHEN MATCHED THEN UPDATE
+SET target.partial_1yr_csp_rate= source.PricePerUnit ;
+ 
+merge into costusage.source_usage.dim_aws_skupricing as target
+using costusage.aws_usage.reference_rds_pricing as source
+on replace(replace(target.line_item_usage_type,'t2','t3'),'m4','m5')=source.usagetype
+and target.pricing_public_on_demand_rate = source.pricing_public_on_demand_rate
+and target.product_region_code=source.product_region_code
+and target.product_servicecode =source.product_servicecode
+and target.product_servicecode ='AmazonRDS'
+and source.purchaseoption = 'No Upfront'
+WHEN MATCHED THEN UPDATE
+SET target.noupfront_1yr_csp_rate= source.PricePerUnit ;
+
+
+select target.*,replace(replace(target.line_item_usage_type,'t2','t3'),'m4','m5'),source.pricing_public_on_demand_rate,source.priceperunit,source.* from
+costusage.dev_usage.fact_aws_assets as target
+full outer join costusage.aws_usage.reference_rds_pricing as source
+on target.line_item_usage_type=source.line_item_usage_type
+and target.pricing_public_on_demand_rate = source.pricing_public_on_demand_rate
+and target.product_region_code=source.product_region_code
+and target.product_servicecode =source.product_servicecode
+where target.product_servicecode ='AmazonRDS'
+and source.purchaseoption = 'No Upfront'
+
+-- COMMAND ----------
+
+select * from costusage.dev_usage.fact_aws_assets
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC # other
 
 -- COMMAND ----------
 
@@ -101,11 +991,11 @@ MANAGED LOCATION 's3://pm-epsilon-athena/databricks/aws/';
 -- COMMAND ----------
 
 -- DBTITLE 1,aws_costusage_2023
-drop table if exists costusage.source_usage.aws_costusage_2023;
-CREATE EXTERNAL TABLE  IF NOT EXISTS costusage.source_usage.aws_costusage_2023
+drop table if exists costusage.aws_usage.aws_costusage_2023;
+CREATE EXTERNAL TABLE  IF NOT EXISTS costusage.aws_usage.aws_costusage_2023
 (
-  `aws_detailed_service` STRING,
   `date` date,
+  `aws_detailed_service` STRING,
   `usage` float,
   `products` STRING,
   `category` STRING,
@@ -122,11 +1012,11 @@ OPTIONS (
 -- COMMAND ----------
 
 -- DBTITLE 1,aws_costusage_2024_current
-drop table costusage.source_usage.aws_costusage_2024_current;
-CREATE EXTERNAL TABLE  IF NOT EXISTS costusage.source_usage.aws_costusage_2024_current
+drop table costusage.aws_usage.aws_costusage_2024_current;
+CREATE EXTERNAL TABLE  IF NOT EXISTS costusage.aws_usage.aws_costusage_2024_current
 (
-  `aws_detailed_service` STRING,
   `date` date,
+  `aws_detailed_service` STRING,
   `usage` float,
   `products` STRING,
   `category` STRING,
@@ -142,7 +1032,9 @@ OPTIONS (
 
 -- COMMAND ----------
 
-REFRESH TABLE costusage.source_usage.aws_costusage_2024
+REFRESH TABLE costusage.aws_usage.aws_costusage_2023;
+select * from costusage.aws_usage.aws_costusage_2023
+REFRESH TABLE costusage.aws_usage.aws_costusage_2024_current
 
 -- COMMAND ----------
 
@@ -481,8 +1373,8 @@ select resource_id,tag_name,tag_costgroup2,line_item_usage_start_date from costu
 -- COMMAND ----------
 
 -- DBTITLE 1,MATERIALIZED VIEW: v_fact_awscur_previous
-DROP MATERIALIZED VIEW costusage.${environment}_usage.v_fact_awscur_previous;
-create MATERIALIZED VIEW costusage.${environment}_usage.v_fact_awscur_previous
+DROP VIEW costusage.${environment}_usage.v_fact_awscur_previous;
+create VIEW costusage.${environment}_usage.v_fact_awscur_previous
 as
 select * from
 (
@@ -573,7 +1465,6 @@ select year
 , ri_effective_cost
 , sp_effective_cost
 from costusage.${environment}_usage.v_awscur_previous
--- where resource_id ='i-0a869093442623f39'
 WINDOW w as (partition by resource_id order by line_item_usage_start_date desc)
 ) a
 WINDOW w as (partition by tag_name order by line_item_usage_start_date desc)
@@ -681,6 +1572,17 @@ WINDOW w as (partition by resource_id order by line_item_usage_start_date desc)
 WINDOW w as (partition by tag_name order by line_item_usage_start_date desc)
 ) b
 where (month = month(date_format(dateadd(MONTH, 0, current_date()), 'yyyy-MM-01')) and year = year(date_format(dateadd(MONTH, 0, current_date()), 'yyyy-MM-01')))
+
+-- COMMAND ----------
+
+-- DBTITLE 1,#temp table fact_awscur_previous
+DROP TABLE IF EXISTS costusage.${environment}_usage.fact_awscur_previous;
+create or replace table costusage.${environment}_usage.fact_awscur_previous
+using delta
+LOCATION 's3://pm-epsilon-athena/databricks/${environment}/${environment}_usage/fact_awscur_previous/'
+AS
+select * from costusage.${environment}_usage.v_fact_awscur_previous;
+
 
 -- COMMAND ----------
 
@@ -808,16 +1710,6 @@ and tag_project is null
 
 -- COMMAND ----------
 
--- DBTITLE 1,query for PAS
-select *
-from costusage.${environment}_usage.v_fact_awscur_previous
-where tag_costgroup2 = ''
-group by tag_project
-
-
-
--- COMMAND ----------
-
 -- DBTITLE 1,Table fact_awscur
 DROP TABLE IF EXISTS costusage.${environment}_usage.fact_awscur;
 create or replace table costusage.${environment}_usage.fact_awscur
@@ -830,14 +1722,14 @@ select * from costusage.${environment}_usage.v_fact_awscur_previous where (1=0) 
 
 -- COMMAND ----------
 
--- DBTITLE 1,archive previous month data
-
-insert into costusage.${environment}_usage.fact_awscur
-select * from costusage.${environment}_usage.fact_awscur_previous where year*100+month not in (select year*100+month from costusage.${environment}_usage.fact_awscur);
+delete from costusage.${environment}_usage.fact_awscur where year*100+month in (select distinct year*100+month from costusage.${environment}_usage.fact_awscur_previous);
 
 -- COMMAND ----------
 
+-- DBTITLE 1,archive previous month data
 
+insert into costusage.${environment}_usage.fact_awscur
+select * from costusage.${environment}_usage.fact_awscur_previous where year*100+month not in (select distinct year*100+month from costusage.${environment}_usage.fact_awscur);
 
 -- COMMAND ----------
 
@@ -986,7 +1878,7 @@ and usage_amount <= 1
 --16415762
 --1941694
 --14474068
-
+REFRESH MATERIALIZED VIEW costusage.${environment}_usage.v_fact_awscur_previous;
 
 -- COMMAND ----------
 
@@ -997,6 +1889,13 @@ and usage_amount <= 1
 
 -- DBTITLE 1,update resource_id
 -- Update tag_costgroup2 in costusage.source_usage.awstags_latest with new from costusage.source_usage.dim_customtags when type is resource_id, resource_id like dim_customtags.name, owner_id is original, and tag_costgroup2 is not new
+MERGE INTO costusage.${environment}_usage.fact_awscur AS aws
+USING costusage.source_usage.dim_awstags AS dim
+   ON aws.resource_id = dim.resource_id
+   AND aws.owner_id = dim.owner_id
+WHEN MATCHED THEN 
+   UPDATE SET aws.tag_costgroup2 = upper(ltrim(rtrim(dim.tag_costgroup2)));
+
 UPDATE costusage.${environment}_usage.fact_awscur
 SET tag_costgroup2 = case when upper(ltrim(rtrim(tag_scope))) ='EMEADATALAKE' then 'DATALAKE EMEA' else upper(ltrim(rtrim(COALESCE(tag_costgroup2,'')))) end
 where tag_costgroup2 != upper(ltrim(rtrim(COALESCE(tag_costgroup2,'')))) or (upper(ltrim(rtrim(tag_scope))) ='EMEADATALAKE' and tag_costgroup2 <> 'DATALAKE EMEA');
@@ -1007,7 +1906,7 @@ where tag_costgroup2 != upper(ltrim(rtrim(COALESCE(tag_costgroup2,'')))) or (upp
 -- COMMAND ----------
 
 -- DBTITLE 1,audit step 1: should be null
-select resource_id,owner_id,max(tag_costgroup2),min(tag_costgroup2) from costusage.${environment}_usage.dim_awstags group by resource_id,owner_id having count(1) > 1
+select resource_id,owner_id,max(tag_costgroup2),min(tag_costgroup2) from costusage.source_usage.dim_awstags group by resource_id,owner_id having count(1) > 1
 
 
 
@@ -1015,7 +1914,7 @@ select resource_id,owner_id,max(tag_costgroup2),min(tag_costgroup2) from costusa
 
 -- DBTITLE 1,inital latest tag costgroup2
 MERGE INTO costusage.${environment}_usage.previous_aws_cur AS aws
-USING costusage.${environment}_usage.dim_awstags AS dim
+USING costusage.source_usage.dim_awstags AS dim
    ON aws.resource_id = dim.resource_id
    AND aws.owner_id = dim.owner_id
 WHEN MATCHED THEN 
@@ -1041,7 +1940,7 @@ FROM costusage.source_usage.previous_aws_cur
 
 -- COMMAND ----------
 
-MERGE INTO costusage.${environment}_usage.previous_aws_cur AS aws
+MERGE INTO costusage.${environment}_usage.fact_aws_cur AS aws
 USING costusage.${environment}_usage.dim_customtags AS dim
    ON aws.owner_id = dim.name
    AND dim.type = 'owner_id' 
@@ -1252,11 +2151,40 @@ DROP TABLE costusage.${environment}_usage.fact_awsusage
 
 -- COMMAND ----------
 
-CREATE OR REPLACE TABLE costusage.{{environment}}_usage.fact_awsusage
+CREATE OR REPLACE TABLE costusage.${environment}_usage.fact_awsusage
 USING DELTA
-LOCATION 's3://pm-epsilon-athena/databricks/{{environment}}/{{environment}}_usage/fact_awsusage/'
+LOCATION 's3://pm-epsilon-athena/databricks/${environment}/${environment}_usage/fact_awsusage/'
 PARTITIONED BY (year , month)
 select * from costusage.source_costusage.v_current_month_aws_cur
 
-insert table costusage.{{environment}}_usage.fact_awsusage
+insert table costusage.${environment}_usage.fact_awsusage
 select * from costusage.source_costusage.v_previous_month_aws_cur
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC EC2 Usage
+
+-- COMMAND ----------
+
+select * from costusage.${environment}_usage.fact_awscur
+
+-- COMMAND ----------
+
+
+SELECT
+  year
+, month
+, (CASE WHEN (tag_costgroup2 <> '') THEN tag_costgroup2 ELSE 'ASSETSNOTALLOCATED' END) tag_costgroup2
+, aws_service
+, service_family
+, item_type
+, sum((CASE WHEN (item_type = 'DiscountedUsage') THEN ((ondemand_cost - ri_effective_cost) * 0.25) ELSE 0 END)) unblended_zestyfee
+, sum((CASE WHEN (item_type = 'DiscountedUsage') THEN ri_net_effective_cost ELSE 0 END)) ri_net_unblended_cost
+, sum((CASE WHEN (item_type = 'SavingsPlanCoveredUsage') THEN sp_net_effective_cost ELSE 0 END)) sp_net_unblended_cost
+, sum(net_unblended_cost) net_unblended_cost
+, sum(ondemand_cost) ondemand_cost
+FROM
+  costusage.${environment}_usage.fact_awsusage_previous
+WHERE ((((1 = 1) AND (usage_type LIKE '%BoxUsage%')) AND (item_type LIKE '%Usage%')) AND (aws_service = 'AmazonEC2'))
+GROUP BY year, month, tag_costgroup2, aws_service, service_family, item_type

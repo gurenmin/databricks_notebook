@@ -9,7 +9,12 @@
 -- COMMAND ----------
 
 -- DBTITLE 1,validate min usage_date check from system.billing.usage
--- MAGIC %sql select min(usage_date) FROM system.billing.usage
+-- MAGIC %sql select min(usage_date) FROM system.billing.usage;
+-- MAGIC select *,usage_metadata.endpoint_name  from system.billing.usage
+-- MAGIC -- where usage.sku_name,usage_metadata.instance_pool_id is not null or usage_metadata.notebook_id is not null or usage_metadata.dlt_pipeline_id is not null or 
+-- MAGIC where usage_metadata.dlt_pipeline_id = "fdad88a1-3fad-489e-bb30-2a548bec3461"
+-- MAGIC order by usage_date desc
+-- MAGIC  limit 100
 
 -- COMMAND ----------
 
@@ -64,7 +69,7 @@ OPTIONS (
   'mergeSchema' 'true'
 );
 
-
+DROP Table costusage.source_usage.dim_skupricing;
 CREATE EXTERNAL TABLE  IF NOT EXISTS costusage.source_usage.dim_skupricing
 USING csv
 OPTIONS (
@@ -95,16 +100,30 @@ LOCATION 's3://pm-epsilon-athena/databricks/dim_tables/dim_dbutags/'
 AS
 WITH LatestUsage AS (
   SELECT
-  case when sku_name like '%JOB%' then usage_metadata.job_id
-  when sku_name like '%SQL%' then usage_metadata.warehouse_id
-  else usage_metadata.cluster_id end as entity_id,
+  case 
+  when usage_metadata.job_id is not null then concat('jobs/',usage_metadata.job_id)
+  when usage_metadata.warehouse_id is not null then concat('sql/warehouses/',usage_metadata.warehouse_id)
+  when usage_metadata.endpoint_id is not null and usage.billing_origin_product ='VECTOR_SEARCH' then concat('compute/vector-search/',usage_metadata.endpoint_name)
+  when custom_tags.EndpointId is not null and usage.billing_origin_product ='MODEL_SERVING' then concat('ml/endpoints/',custom_tags.EndpointId)
+  when usage_metadata.notebook_id is not null then concat('#notebook/',usage_metadata.notebook_id)
+  when usage_metadata.instance_pool_id is not null then concat('#instance_pool/',usage_metadata.instance_pool_id)
+  when usage_metadata.dlt_pipeline_id is not null then concat('pipelines/',usage_metadata.dlt_pipeline_id)
+  else concat('compute/clusters/', usage_metadata.cluster_id)  end  end as entity_id,
     usage_start_time,
     custom_tags,
     --sku_name,
     usage_metadata,
-    ROW_NUMBER() OVER (PARTITION BY case when sku_name like '%JOB%' then usage_metadata.job_id
-  when sku_name like '%SQL%' then usage_metadata.warehouse_id
-  else usage_metadata.cluster_id end ORDER BY usage_start_time DESC) AS rn
+    ROW_NUMBER() OVER (PARTITION BY   
+  case 
+  when usage_metadata.job_id is not null then concat('jobs/',usage_metadata.job_id)
+  when usage_metadata.warehouse_id is not null then concat('sql/warehouses/',usage_metadata.warehouse_id)
+  when usage_metadata.endpoint_id is not null and usage.billing_origin_product ='VECTOR_SEARCH' then concat('compute/vector-search/',usage_metadata.endpoint_name)
+  when custom_tags.EndpointId is not null and usage.billing_origin_product ='MODEL_SERVING' then concat('ml/endpoints/',custom_tags.EndpointId)
+  when usage_metadata.notebook_id is not null then concat('#notebook/',usage_metadata.notebook_id)
+  when usage_metadata.instance_pool_id is not null then concat('#instance_pool/',usage_metadata.instance_pool_id)
+  when usage_metadata.dlt_pipeline_id is not null then concat('pipelines/',usage_metadata.dlt_pipeline_id)
+  else concat('compute/clusters/', usage_metadata.cluster_id)  end
+     ORDER BY usage_start_time DESC) AS rn
   FROM system.billing.usage
   where custom_tags.CostGroup2 is not null
   --where usage_date < date_format(current_date(),'yyyy-MM-01')
@@ -126,16 +145,31 @@ CREATE OR REPLACE VIEW costusage.source_usage.dim_dbutags_current
 AS
 WITH LatestUsage AS (
   SELECT
-  case when sku_name like '%JOB%' then usage_metadata.job_id
-  when sku_name like '%SQL%' then usage_metadata.warehouse_id
-  else usage_metadata.cluster_id end as entity_id,
+  case 
+  when usage_metadata.job_id is not null then concat('jobs/',usage_metadata.job_id)
+  when usage_metadata.warehouse_id is not null then concat('sql/warehouses/',usage_metadata.warehouse_id)
+  when usage_metadata.endpoint_id is not null and usage.billing_origin_product ='VECTOR_SEARCH' then concat('compute/vector-search/',usage_metadata.endpoint_name)
+  when custom_tags.EndpointId is not null and usage.billing_origin_product ='MODEL_SERVING' then concat('ml/endpoints/',custom_tags.EndpointId)
+  when usage_metadata.notebook_id is not null then concat('#notebook/',usage_metadata.notebook_id)
+  when usage_metadata.instance_pool_id is not null then concat('#instance_pool/',usage_metadata.instance_pool_id)
+  when usage_metadata.dlt_pipeline_id is not null then concat('pipelines/',usage_metadata.dlt_pipeline_id)
+  else concat('compute/clusters/', usage_metadata.cluster_id)  end as entity_id,
     usage_start_time,
     custom_tags,
     --sku_name,
     usage_metadata,
-    ROW_NUMBER() OVER (PARTITION BY case when sku_name like '%JOB%' then usage_metadata.job_id
-  when sku_name like '%SQL%' then usage_metadata.warehouse_id
-  else usage_metadata.cluster_id end ORDER BY usage_start_time DESC) AS rn
+    ROW_NUMBER() OVER (PARTITION BY   
+     
+  case 
+  when usage_metadata.job_id is not null then concat('jobs/',usage_metadata.job_id)
+  when usage_metadata.warehouse_id is not null then concat('sql/warehouses/',usage_metadata.warehouse_id)
+  when usage_metadata.endpoint_id is not null and usage.billing_origin_product ='VECTOR_SEARCH' then concat('compute/vector-search/',usage_metadata.endpoint_name)
+  when custom_tags.EndpointId is not null and usage.billing_origin_product ='MODEL_SERVING' then concat('ml/endpoints/',custom_tags.EndpointId)
+  when usage_metadata.notebook_id is not null then concat('#notebook/',usage_metadata.notebook_id)
+  when usage_metadata.instance_pool_id is not null then concat('#instance_pool/',usage_metadata.instance_pool_id)
+  when usage_metadata.dlt_pipeline_id is not null then concat('pipelines/',usage_metadata.dlt_pipeline_id)
+  else concat('compute/clusters/', usage_metadata.cluster_id)  end  
+  ORDER BY usage_start_time DESC) AS rn
   FROM system.billing.usage
   where custom_tags.CostGroup2 is not null
   -- where usage_date >= date_format(current_date(),'yyyy-MM-01')
@@ -185,18 +219,26 @@ AS
 WITH initalusage AS (
 select 
   usage.*,
-  sku.sku_listed_rate,
-  sku.sku_contract_rate,
+  list_sku.sku_listed_rate,
+  case when sku.sku_contract_rate is null then list_sku.sku_listed_rate else sku.sku_contract_rate end as sku_contract_rate,
   sku.entity_type,
   -- workspace.workspace,
   -- workspace.workspace_url,
-  case when usage.sku_name like '%JOB%' then usage_metadata.job_id
-  when usage.sku_name like '%SQL%' then usage_metadata.warehouse_id
-  else usage_metadata.cluster_id end as entity_id
+  case 
+  when usage_metadata.job_id is not null then concat('jobs/',usage_metadata.job_id)
+  when usage_metadata.warehouse_id is not null then concat('sql/warehouses/',usage_metadata.warehouse_id)
+  when usage_metadata.endpoint_id is not null and usage.billing_origin_product ='VECTOR_SEARCH' then concat('compute/vector-search/',usage_metadata.endpoint_name)
+  when custom_tags.EndpointId is not null and usage.billing_origin_product ='MODEL_SERVING' then concat('ml/endpoints/',custom_tags.EndpointId)
+  when usage_metadata.notebook_id is not null then concat('#notebook/',usage_metadata.notebook_id)
+  when usage_metadata.instance_pool_id is not null then concat('#instance_pool/',usage_metadata.instance_pool_id)
+  when usage_metadata.dlt_pipeline_id is not null then concat('pipelines/',usage_metadata.dlt_pipeline_id)
+  else concat('compute/clusters/', usage_metadata.cluster_id)  end as entity_id
 FROM
   system.billing.usage as usage
 left join
-  costusage.source_usage.dim_skupricing as sku on usage.sku_name = sku.sku_name
+  costusage.source_usage.dim_skupricing as sku on usage.sku_name = sku.sku_name and sku.enddate is null
+  left join 
+ (select account_id,price_start_time as startdate,price_end_time as enddate,sku_name,pricing.default as sku_listed_rate from system.billing.list_prices) as list_sku on usage.sku_name = list_sku.sku_name and list_sku.enddate is null
 -- left join
 --   costusage.source_usage.dim_workspaces as workspace on usage.workspace_id = workspace.workspace_id
 where usage_date < date_format(current_date(),'yyyy-MM-01')
@@ -217,7 +259,7 @@ SELECT
   When (ltrim(tags.CostGroup2) IS  null and workspace_id = 2415015179768953) THEN 'DIGITAS-US-DATABRICKS'  
   When (ltrim(tags.CostGroup2) IS  null and workspace_id = 5119006976089872) OR  (upper(tags.CostGroup2) LIKE '%COLLECTIVE%') THEN 'COLLECTIVE-US-DATABRICKS'
   When (ltrim(tags.CostGroup2) IS  null and workspace_id = 2702753715296702) OR (upper(tags.CostGroup2) LIKE '%LAB%') THEN 'LAB-US-DATABRICKS'
-  When (ltrim(tags.CostGroup2) IS  null and workspace_id = 5445138883374470)  OR (upper(tags.CostGroup2) LIKE '%DPR%') THEN 'DPR-US-DATABRICKS'
+  When (ltrim(tags.CostGroup2) IS  null and (workspace_id = 5445138883374470 or workspace_id = 2838434924534453))  OR (upper(tags.CostGroup2) LIKE '%DPR%') THEN 'DPR-US-DATABRICKS'
   When (upper(tags.CostGroup2) LIKE '%GROWTHOS%') THEN 'GROWTHOS-US-DATABRICKS'
   When (upper(tags.CostGroup2) LIKE '%DATALAKE%') THEN 'DTI-US-DATABRICKS' 
   else upper(tags.CostGroup2) end as CostGroup2,
@@ -274,18 +316,26 @@ as
 WITH initalusage AS (
 select 
   usage.*,
-  sku.sku_listed_rate,
-  sku.sku_contract_rate,
+  list_sku.sku_listed_rate,
+  case when sku.sku_contract_rate is null then list_sku.sku_listed_rate else sku.sku_contract_rate end as sku_contract_rate,
   sku.entity_type,
   -- workspace.workspace,
   -- workspace.workspace_url,
-  case when usage.sku_name like '%JOB%' then usage_metadata.job_id
-  when usage.sku_name like '%SQL%' then usage_metadata.warehouse_id
-  else usage_metadata.cluster_id end as entity_id
+  case 
+  when usage_metadata.job_id is not null then concat('jobs/',usage_metadata.job_id)
+  when usage_metadata.warehouse_id is not null then concat('sql/warehouses/',usage_metadata.warehouse_id)
+  when usage_metadata.endpoint_id is not null and usage.billing_origin_product ='VECTOR_SEARCH' then concat('compute/vector-search/',usage_metadata.endpoint_name)
+  when custom_tags.EndpointId is not null and usage.billing_origin_product ='MODEL_SERVING' then concat('ml/endpoints/',custom_tags.EndpointId)
+  when usage_metadata.notebook_id is not null then concat('#notebook/',usage_metadata.notebook_id)
+  when usage_metadata.instance_pool_id is not null then concat('#instance_pool/',usage_metadata.instance_pool_id)
+  when usage_metadata.dlt_pipeline_id is not null then concat('pipelines/',usage_metadata.dlt_pipeline_id)
+  else concat('compute/clusters/', usage_metadata.cluster_id)  end as entity_id
 FROM
   system.billing.usage as usage
 left join
-  costusage.source_usage.dim_skupricing as sku on usage.sku_name = sku.sku_name
+  costusage.source_usage.dim_skupricing as sku on usage.sku_name = sku.sku_name and sku.enddate is null
+left join 
+ (select account_id,price_start_time as startdate,price_end_time as enddate,sku_name,pricing.default as sku_listed_rate from system.billing.list_prices) as list_sku on usage.sku_name = list_sku.sku_name and list_sku.enddate is null
 -- left join
 --   costusage.source_usage.dim_workspaces as workspace on usage.workspace_id = workspace.workspace_id
 where usage_date >= date_format(current_date(),'yyyy-MM-01')
@@ -305,7 +355,7 @@ SELECT
   When (ltrim(tags.CostGroup2) IS  null and workspace_id = 2415015179768953) THEN 'DIGITAS-US-DATABRICKS'  
   When (ltrim(tags.CostGroup2) IS  null and workspace_id = 5119006976089872) OR  (upper(tags.CostGroup2) LIKE '%COLLECTIVE%') THEN 'COLLECTIVE-US-DATABRICKS'
   When (ltrim(tags.CostGroup2) IS  null and workspace_id = 2702753715296702) OR (upper(tags.CostGroup2) LIKE '%LAB%') THEN 'LAB-US-DATABRICKS'
-  When (ltrim(tags.CostGroup2) IS  null and workspace_id = 5445138883374470)  OR (upper(tags.CostGroup2) LIKE '%DPR%') THEN 'DPR-US-DATABRICKS'
+  When (ltrim(tags.CostGroup2) IS  null and (workspace_id = 5445138883374470 or workspace_id = 2838434924534453))  OR (upper(tags.CostGroup2) LIKE '%DPR%') THEN 'DPR-US-DATABRICKS'
   When (upper(tags.CostGroup2) LIKE '%GROWTHOS%') THEN 'GROWTHOS-US-DATABRICKS'
   When (upper(tags.CostGroup2) LIKE '%DATALAKE%') THEN 'DTI-US-DATABRICKS' 
   else upper(tags.CostGroup2) end as CostGroup2,
@@ -355,18 +405,27 @@ AS
 WITH initalusage AS (
 select 
   usage.*,
-  sku.sku_listed_rate,
-  sku.sku_contract_rate,
+  list_sku.sku_listed_rate,
+  case when sku.sku_contract_rate is null then list_sku.sku_listed_rate else sku.sku_contract_rate end as sku_contract_rate,
   sku.entity_type,
   -- workspace.workspace,
   -- workspace.workspace_url,
-  case when usage.sku_name like '%JOB%' then usage_metadata.job_id
-  when usage.sku_name like '%SQL%' then usage_metadata.warehouse_id
-  else usage_metadata.cluster_id end as entity_id
+  case 
+  when usage_metadata.job_id is not null then concat('jobs/',usage_metadata.job_id)
+  when usage_metadata.warehouse_id is not null then concat('sql/warehouses/',usage_metadata.warehouse_id)
+  when usage_metadata.endpoint_id is not null and usage.billing_origin_product ='VECTOR_SEARCH' then concat('compute/vector-search/',usage_metadata.endpoint_name)
+  when custom_tags.EndpointId is not null and usage.billing_origin_product ='MODEL_SERVING' then concat('ml/endpoints/',custom_tags.EndpointId)
+  when usage_metadata.notebook_id is not null then concat('#notebook/',usage_metadata.notebook_id)
+  when usage_metadata.instance_pool_id is not null then concat('#instance_pool/',usage_metadata.instance_pool_id)
+  when usage_metadata.dlt_pipeline_id is not null then concat('pipelines/',usage_metadata.dlt_pipeline_id)
+  else concat('compute/clusters/', usage_metadata.cluster_id)  end as entity_id
+
 FROM
   system.billing.usage as usage
 left join
-  costusage.source_usage.dim_skupricing as sku on usage.sku_name = sku.sku_name
+  costusage.source_usage.dim_skupricing as sku on usage.sku_name = sku.sku_name and sku.enddate is null
+  left join 
+ (select account_id,price_start_time as startdate,price_end_time as enddate,sku_name,pricing.default as sku_listed_rate from system.billing.list_prices) as list_sku on usage.sku_name = list_sku.sku_name and list_sku.enddate is null
 -- left join
 --   costusage.source_usage.dim_workspaces as workspace on usage.workspace_id = workspace.workspace_id
 where usage_date < date_format(current_date(),'yyyy-MM-01')
@@ -386,7 +445,7 @@ SELECT
   When (ltrim(tags.CostGroup2) IS  null and workspace_id = 2415015179768953) THEN 'DIGITAS-US-DATABRICKS'  
   When (ltrim(tags.CostGroup2) IS  null and workspace_id = 5119006976089872) OR  (upper(tags.CostGroup2) LIKE '%COLLECTIVE%') THEN 'COLLECTIVE-US-DATABRICKS'
   When (ltrim(tags.CostGroup2) IS  null and workspace_id = 2702753715296702) OR (upper(tags.CostGroup2) LIKE '%LAB%') THEN 'LAB-US-DATABRICKS'
-  When (ltrim(tags.CostGroup2) IS  null and workspace_id = 5445138883374470)  OR (upper(tags.CostGroup2) LIKE '%DPR%') THEN 'DPR-US-DATABRICKS'
+  When (ltrim(tags.CostGroup2) IS  null and (workspace_id = 5445138883374470 or workspace_id = 2838434924534453))  OR (upper(tags.CostGroup2) LIKE '%DPR%') THEN 'DPR-US-DATABRICKS'
   When (upper(tags.CostGroup2) LIKE '%GROWTHOS%') THEN 'GROWTHOS-US-DATABRICKS'
   When (upper(tags.CostGroup2) LIKE '%DATALAKE%') THEN 'DTI-US-DATABRICKS' 
   else upper(tags.CostGroup2) end as CostGroup2,
@@ -891,16 +950,6 @@ from
 -- DBTITLE 1,expect no results
 SELECT entity_id,count(1) from costusage.source_usage.dim_dbutags_current group by entity_id
 having  count(1) > 1
-
--- COMMAND ----------
-
--- MAGIC %md
--- MAGIC AWS Cost Usage
-
--- COMMAND ----------
-
--- DBTITLE 1,Create external aws usage tables 
-
 
 -- COMMAND ----------
 

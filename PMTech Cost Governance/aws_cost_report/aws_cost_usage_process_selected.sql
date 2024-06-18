@@ -1,54 +1,6 @@
 -- Databricks notebook source
 -- MAGIC %md
--- MAGIC ### meta data
-
--- COMMAND ----------
-
--- DBTITLE 1,database ${environment}_usage
-CREATE DATABASE IF NOT EXISTS costusage.aws_usage
-MANAGED LOCATION 's3://pm-epsilon-athena/databricks/aws/';
-
--- COMMAND ----------
-
--- DBTITLE 1,dim_customtags
-
-CREATE EXTERNAL TABLE IF NOT EXISTS costusage.source_usage.dim_customtags
-(
-  `type` STRING,
-  `name` STRING,
-  `original` STRING,
-  `new` STRING
-)
-USING csv
-OPTIONS (
-  'header' 'false',
-  'inferSchema' 'true',
-  'path' 's3://pm-epsilon-athena/databricks/dim_tables/dim_customtags/dim_customtags.csv',
-  'mergeSchema' 'true'
-);
-REFRESH TABLE costusage.source_usage.dim_customtags; 
-
--- COMMAND ----------
-
--- DBTITLE 1,source_awscur
-DROP TABLE costusage.source_usage.source_awscur;
-CREATE TABLE IF NOT EXISTS costusage.source_usage.source_awscur
-USING parquet
-OPTIONS (
-  'path' 's3://pm-epsilon-cur-athena/pm-cur-athena/pm_epsilon_cur_athena/pm_epsilon_cur_athena',
-  'mergeSchema' 'true'
-);
-
--- COMMAND ----------
-
--- MAGIC %md
--- MAGIC
--- MAGIC ## View Ininital
-
--- COMMAND ----------
-
--- MAGIC %md
--- MAGIC ### historical view
+-- MAGIC # meta data
 
 -- COMMAND ----------
 
@@ -58,7 +10,7 @@ as
 SELECT
   year
 , month
-, line_item_usage_start_date
+, line_item_usage_start_date usage_time
 , bill_billing_entity
 , line_item_usage_account_id owner_id
 , UPPER(TRIM(resource_tags_user_cost_group1))  tag_costgroup1
@@ -72,6 +24,7 @@ SELECT
 , UPPER(TRIM(resource_tags_user_client)) tag_client
 , UPPER(TRIM(resource_tags_user_agency)) tag_agency
 , UPPER(TRIM(resource_tags_user_product)) tag_product
+, UPPER(TRIM(resource_tags_user_owner)) tag_owner
 , UPPER(TRIM(resource_tags_user_scope)) tag_scope
 , UPPER(TRIM(resource_tags_user_ambiente)) tag_italyambiente
 , UPPER(TRIM(resource_tags_user_cost_group_1)) tag_italycostgroup1
@@ -94,26 +47,30 @@ ELSE product_product_family END) service_family
 , line_item_operation service_operation
 , product_region service_region
 , product_operating_system service_os
+, product_instance_type_family instance_family
 , product_instance_type instance_type
--- , product_license_model license_model
+, product_marketoption
+, product_license_model as license_model
+, product_tenancy
 , pricing_term
 , pricing_unit
+, product_purchase_option as purchase_option
+, product_database_edition as database_edition
+, product_database_engine as database_engine
+, product_deployment_option as deployment_option
 , line_item_usage_type usage_type
 , line_item_line_item_type item_type
 , line_item_usage_amount usage_amount
 , line_item_net_unblended_cost net_unblended_cost
 , pricing_public_on_demand_cost ondemand_cost
 , pricing_public_on_demand_rate ondemand_rate
-, (CASE WHEN (line_item_line_item_type = 'RIFee') THEN line_item_unblended_rate ELSE '0' END) ri_rate
-, savings_plan_savings_plan_rate sp_rate
-, reservation_net_effective_cost ri_net_effective_cost
--- , (reservation_net_recurring_fee_for_usage + reservation_net_unused_recurring_fee) ri_net_recurring_fee
-, savings_plan_net_savings_plan_effective_cost sp_net_effective_cost
-, reservation_effective_cost ri_effective_cost
-, savings_plan_savings_plan_effective_cost sp_effective_cost
--- , reservation_amortized_upfront_cost_for_usage ri_amortized_cost
--- , reservation_net_amortized_upfront_cost_for_usage ri_net_amortized_cost
--- , reservation_net_upfront_value
+-- , (CASE WHEN (line_item_line_item_type = 'RIFee') THEN line_item_unblended_rate ELSE '0' END) ri_rate
+-- , savings_plan_savings_plan_rate sp_rate
+-- , reservation_net_effective_cost ri_net_effective_cost
+-- , savings_plan_net_savings_plan_effective_cost sp_net_effective_cost
+-- , reservation_effective_cost ri_effective_cost
+-- , savings_plan_savings_plan_effective_cost sp_effective_cost
+, product_sku
 FROM
   costusage.source_usage.source_awscur cur
 WHERE (1=1)
@@ -125,19 +82,27 @@ AND (
 
 -- COMMAND ----------
 
+-- DBTITLE 1,view  v_awscur_current
+create or replace view costusage.${environment}_usage.v_awscur_current
+as
+select * from costusage.${environment}_usage.v_awscur_previous
+where usage_time >= date_format(dateadd(MONTH, 0, current_date()), 'yyyy-MM-01') 
+
+
+
+
+-- COMMAND ----------
+
 -- MAGIC %md
 -- MAGIC ## retag by id
 
 -- COMMAND ----------
 
-create 
---MATERIALIZED 
-or replace
-VIEW costusage.${environment}_usage.v_awscur_previous_retagbyid
+create or replace VIEW costusage.${environment}_usage.v_awscur_previous_retagbyid
 as
 select year
 ,month
-,line_item_usage_start_date
+,usage_time
 ,bill_billing_entity
 , owner_id
 , first_value(tag_costgroup1) IGNORE NULLS over w as tag_costgroup1
@@ -151,6 +116,7 @@ select year
 , first_value(tag_client) IGNORE NULLS over w as tag_client  
 , first_value(tag_agency) IGNORE NULLS over w as tag_agency   
 , first_value(tag_product) IGNORE NULLS over w as tag_product 
+, first_value(tag_owner) IGNORE NULLS over w as tag_owner 
 , first_value(tag_scope) IGNORE NULLS over w as tag_scope  
 , first_value(tag_italyambiente) IGNORE NULLS over w as tag_italyambiente   
 , first_value(tag_italycostgroup1) IGNORE NULLS over w as tag_italycostgroup1  
@@ -163,27 +129,36 @@ select year
 , service_operation
 , service_region
 , service_os
+, instance_family
 , instance_type
+, product_marketoption
+, license_model
+, product_tenancy
 , pricing_term
 , pricing_unit
+, purchase_option
+, database_edition
+, database_engine
+, deployment_option
 , usage_type
 , item_type
 , usage_amount
 , net_unblended_cost
 , ondemand_cost
 , ondemand_rate
-, ri_rate
-, sp_rate
-, ri_net_effective_cost
-, sp_net_effective_cost
-, ri_effective_cost
-, sp_effective_cost
+-- , ri_rate
+-- , sp_rate
+-- , ri_net_effective_cost
+-- , sp_net_effective_cost
+-- , ri_effective_cost
+-- , sp_effective_cost
+, product_sku
 , tag_costgroup2 as original_tagcostgroup2
 , tag_project as original_tagproject
 from costusage.${environment}_usage.v_awscur_previous
 -- where resource_id ='pmx-precisionmediaplatform'
 where (resource_id is not null and  resource_id <>  "")
-WINDOW w as (partition by resource_id order by line_item_usage_start_date desc)
+WINDOW w as (partition by resource_id order by usage_time desc)
 union all 
 select *, tag_costgroup2 as original_tagcostgroup2
 , tag_project as original_tagproject from costusage.${environment}_usage.v_awscur_previous
@@ -196,14 +171,12 @@ where (resource_id is null or resource_id = "")
 
 -- COMMAND ----------
 
-create 
---MATERIALIZED 
-or replace
-VIEW costusage.${environment}_usage.v_awscur_previous_retagbyIDname
+create or replace VIEW costusage.${environment}_usage.v_awscur_previous_retagbyIDname
 as 
-select year
+select 
+year
 ,month
-,line_item_usage_start_date
+,usage_time
 ,bill_billing_entity
 , owner_id
 , first_value(tag_costgroup1) IGNORE NULLS over w as tag_costgroup1
@@ -217,6 +190,7 @@ select year
 , first_value(tag_client) IGNORE NULLS over w as tag_client  
 , first_value(tag_agency) IGNORE NULLS over w as tag_agency   
 , first_value(tag_product) IGNORE NULLS over w as tag_product 
+, first_value(tag_owner) IGNORE NULLS over w as tag_owner
 , first_value(tag_scope) IGNORE NULLS over w as tag_scope  
 , first_value(tag_italyambiente) IGNORE NULLS over w as tag_italyambiente   
 , first_value(tag_italycostgroup1) IGNORE NULLS over w as tag_italycostgroup1  
@@ -229,26 +203,35 @@ select year
 , service_operation
 , service_region
 , service_os
+, instance_family
 , instance_type
+, product_marketoption
+, license_model
+, product_tenancy
 , pricing_term
 , pricing_unit
+, purchase_option
+, database_edition
+, database_engine
+, deployment_option
 , usage_type
 , item_type
 , usage_amount
 , net_unblended_cost
 , ondemand_cost
 , ondemand_rate
-, ri_rate
-, sp_rate
-, ri_net_effective_cost
-, sp_net_effective_cost
-, ri_effective_cost
-, sp_effective_cost
+-- , ri_rate
+-- , sp_rate
+-- , ri_net_effective_cost
+-- , sp_net_effective_cost
+-- , ri_effective_cost
+-- , sp_effective_cost
+, product_sku
 , original_tagcostgroup2 
 , original_tagproject 
 from costusage.${environment}_usage.v_awscur_previous_retagbyid
 where (tag_name is not null and tag_name <> "")
-WINDOW w as (partition by tag_name order by line_item_usage_start_date desc)
+WINDOW w as (partition by tag_name order by usage_time desc)
 UNION ALL
 select *  from costusage.${environment}_usage.v_awscur_previous_retagbyid where (tag_name is null or tag_name = "")
 
@@ -260,14 +243,157 @@ select *  from costusage.${environment}_usage.v_awscur_previous_retagbyid where 
 
 -- COMMAND ----------
 
+-- DBTITLE 1,rpt view: v_awscur_previous_reallocated
+create 
+--MATERIALIZED 
+or replace
+VIEW costusage.${environment}_usage.v_awscur_previous_reallocated
+as 
+SELECT
+  year,
+  month,
+  usage_time,
+  bill_billing_entity,
+  owner_id,
+  tag_costgroup1,
+  CASE 
+    WHEN (sa.original = 'SA') THEN sa.new 
+    WHEN (sa.original = 'SCOPE') THEN 
+      (CASE WHEN (upper(tag_scope) = 'EMEADATALAKE') THEN 'DATALAKE EMEA' ELSE sa.new END) 
+    WHEN (sa.original = 'COSTGROUP2') 
+      THEN COALESCE(tg.new, COALESCE(NULLIF(tag_costgroup2, ''), COALESCE(sa.new, ''))) 
+      ELSE COALESCE(tg.new, COALESCE(NULLIF(tag_costgroup2, ''), COALESCE(re.new, ''))) END as tag_costgroup2,
+  tag_name,
+  tag_sp,
+  tag_clusterid,
+  tag_clustername,
+  tag_env,
+  tag_project,
+  tag_client,
+  tag_agency,
+  tag_product,
+  tag_owner,
+  tag_scope,
+  tag_italyambiente,
+  tag_italycostgroup1,
+  tag_italycostgroup2,
+  tag_italycliente
+, resource_id
+, aws_service
+, service_name
+, service_family
+, service_operation
+, service_region
+, service_os
+, instance_family
+, instance_type
+, product_marketoption
+, license_model
+, product_tenancy
+, pricing_term
+, pricing_unit
+, purchase_option
+, database_edition
+, database_engine
+, deployment_option
+, usage_type
+, item_type
+, usage_amount
+, net_unblended_cost
+, ondemand_cost
+, ondemand_rate
+, product_sku
+, original_tagcostgroup2 
+, original_tagproject 
+FROM
+  costusage.${environment}_usage.v_awscur_previous_retagbyIDname 
+LEFT JOIN (
+   SELECT
+     type
+   , upper(name) name
+   , upper(original) original
+   , upper(new) new
+   FROM
+      costusage.source_usage.dim_customtags
+   WHERE (type = 'owner_id') -- suggest to switch name and original
+)  sa ON owner_id = sa.name
+LEFT JOIN (
+   SELECT
+     type
+   , upper(name) name
+   , upper(original) original
+   , upper(new) new
+   FROM
+     costusage.source_usage.dim_customtags
+   WHERE (type = 'resource_id')
+)  re ON ((upper(resource_id) LIKE re.name) AND (upper(owner_id) = re.original)) 
+LEFT JOIN (
+   SELECT
+     type
+   , upper(name) name
+   , upper(original) original
+   , upper(new) new
+   FROM
+     costusage.source_usage.dim_customtags
+   WHERE ((type = 'tags') AND (name = 'CostGroup2'))
+)  tg ON (upper(COALESCE(tag_costgroup2, '')) = tg.original)
+
+-- COMMAND ----------
+
 -- DBTITLE 1,rpt_view: v_fact_awscur_previous
 -- DROP MATERIALIZED VIEW costusage.${environment}_usage.v_fact_awscur_previous;
 create
 or replace VIEW costusage.${environment}_usage.v_fact_awscur_previous as
 SELECT
-  *
+  year,
+  month,
+  usage_time,
+  bill_billing_entity,
+  owner_id,
+  tag_costgroup1,
+  tag_costgroup2,
+  tag_name,
+  tag_sp,
+  tag_clusterid,
+  tag_clustername,
+  tag_env,
+  tag_project,
+  tag_client,
+  tag_agency,
+  tag_product,
+  tag_owner,
+  tag_scope,
+  tag_italyambiente,
+  tag_italycostgroup1,
+  tag_italycostgroup2,
+  tag_italycliente
+, resource_id
+, aws_service
+, service_name
+, service_family
+, service_operation
+, service_region
+, service_os
+, instance_family
+, instance_type
+, product_marketoption
+, license_model
+, product_tenancy
+, pricing_term
+, pricing_unit
+, purchase_option
+, database_edition
+, database_engine
+, deployment_option
+, usage_type
+, item_type
+, usage_amount
+, net_unblended_cost
+, ondemand_cost
+, ondemand_rate
+, product_sku
 FROM
-  costusage.${environment}_usage.v_awscur_previous_retagbyIDname
+  costusage.${environment}_usage.v_awscur_previous_reallocated
 where
   (
     month = month(
@@ -284,7 +410,7 @@ where
 
 create or replace view costusage.${environment}_usage.v_fact_awscur_current
 as
-SELECT * FROM costusage.${environment}_usage.v_awscur_previous_retagbyIDname
+SELECT * FROM costusage.${environment}_usage.v_awscur_previous_reallocated
 where (month = month(date_format(dateadd(MONTH, 0, current_date()), 'yyyy-MM-01')) and year = year(date_format(dateadd(MONTH, 0, current_date()), 'yyyy-MM-01')))
 
 -- COMMAND ----------
@@ -301,7 +427,7 @@ as
 SELECT
   year
 , month
-, line_item_usage_start_date
+, line_item_usage_start_date usage_time
 , bill_billing_entity
 , line_item_usage_account_id owner_id
 , UPPER(TRIM(resource_tags_user_cost_group1))  tag_costgroup1
@@ -315,6 +441,7 @@ SELECT
 , UPPER(TRIM(resource_tags_user_client)) tag_client
 , UPPER(TRIM(resource_tags_user_agency)) tag_agency
 , UPPER(TRIM(resource_tags_user_product)) tag_product
+, UPPER(TRIM(resource_tags_user_owner)) tag_owner
 , UPPER(TRIM(resource_tags_user_scope)) tag_scope
 , UPPER(TRIM(resource_tags_user_ambiente)) tag_italyambiente
 , UPPER(TRIM(resource_tags_user_cost_group_1)) tag_italycostgroup1
@@ -337,21 +464,30 @@ ELSE product_product_family END) service_family
 , line_item_operation service_operation
 , product_region service_region
 , product_operating_system service_os
+, product_instance_type_family instance_family
 , product_instance_type instance_type
+, product_marketoption
+, product_license_model as license_model
+, product_tenancy
 , pricing_term
 , pricing_unit
+, product_purchase_option as purchase_option
+, product_database_edition as database_edition
+, product_database_engine as database_engine
+, product_deployment_option as deployment_option
 , line_item_usage_type usage_type
 , line_item_line_item_type item_type
 , line_item_usage_amount usage_amount
 , line_item_net_unblended_cost net_unblended_cost
 , pricing_public_on_demand_cost ondemand_cost
 , pricing_public_on_demand_rate ondemand_rate
-, (CASE WHEN (line_item_line_item_type = 'RIFee') THEN line_item_unblended_rate ELSE '0' END) ri_rate
-, savings_plan_savings_plan_rate sp_rate
-, reservation_net_effective_cost ri_net_effective_cost
-, savings_plan_net_savings_plan_effective_cost sp_net_effective_cost
-, reservation_effective_cost ri_effective_cost
-, savings_plan_savings_plan_effective_cost sp_effective_cost
+-- , (CASE WHEN (line_item_line_item_type = 'RIFee') THEN line_item_unblended_rate ELSE '0' END) ri_rate
+-- , savings_plan_savings_plan_rate sp_rate
+-- , reservation_net_effective_cost ri_net_effective_cost
+-- , savings_plan_net_savings_plan_effective_cost sp_net_effective_cost
+-- , reservation_effective_cost ri_effective_cost
+-- , savings_plan_savings_plan_effective_cost sp_effective_cost
+, product_sku
 FROM
   costusage.source_usage.source_awscur cur
 WHERE (1=1)
@@ -362,7 +498,7 @@ AND line_item_usage_start_date >= date_format(dateadd(MONTH, ${from_selected}, c
 and 
 (
   line_item_usage_start_date < date_format(dateadd(MONTH, int(${to_selected}+1), current_date()), 'yyyy-MM-01')
-or (product_product_name = 'Amazon Registrar' and date_format(date(CONCAT(year, '-', LPAD(month, 2, '0'), '-01')), 'yyyy-MM-01') >= date_format(dateadd(MONTH, int(${from_selected}), current_date()), 'yyyy-MM-01') and date_format(date(CONCAT(year, '-', LPAD(month, 2, '0'), '-01')), 'yyyy-MM-01') < date_format(dateadd(MONTH, int(${to_selected}+1), current_date()), 'yyyy-MM-01') )
+or (product_product_name = 'Amazon Registrar' and date_format(date(CONCAT(year, '-', LPAD(month, 2, '0'), '-01')), 'yyyy-MM-01') >= date_format(dateadd(MONTH, int(${from_selected}), current_date()), 'yyyy-MM-01') and date_format(date(CONCAT(year, '-', LPAD(month, 2, '0'), '-01')), 'yyyy-MM-01') < date_format(dateadd(MONTH, int(${to_selected}+1), current_date()), 'yyyy-MM-01'))
 or line_item_usage_start_date >= date_format(dateadd(MONTH, 0, current_date()), 'yyyy-MM-01')
 )
 
@@ -376,9 +512,10 @@ create
 or replace
 VIEW costusage.${environment}_usage.v_awscur_selected_retagbyid
 as
-select year
+select 
+year
 ,month
-,line_item_usage_start_date
+,usage_time
 ,bill_billing_entity
 , owner_id
 , first_value(tag_costgroup1) IGNORE NULLS over w as tag_costgroup1
@@ -392,6 +529,7 @@ select year
 , first_value(tag_client) IGNORE NULLS over w as tag_client  
 , first_value(tag_agency) IGNORE NULLS over w as tag_agency   
 , first_value(tag_product) IGNORE NULLS over w as tag_product 
+, first_value(tag_owner) IGNORE NULLS over w as tag_owner 
 , first_value(tag_scope) IGNORE NULLS over w as tag_scope  
 , first_value(tag_italyambiente) IGNORE NULLS over w as tag_italyambiente   
 , first_value(tag_italycostgroup1) IGNORE NULLS over w as tag_italycostgroup1  
@@ -404,27 +542,36 @@ select year
 , service_operation
 , service_region
 , service_os
+, instance_family
 , instance_type
+, product_marketoption
+, license_model
+, product_tenancy
 , pricing_term
 , pricing_unit
+, purchase_option
+, database_edition
+, database_engine
+, deployment_option
 , usage_type
 , item_type
 , usage_amount
 , net_unblended_cost
 , ondemand_cost
 , ondemand_rate
-, ri_rate
-, sp_rate
-, ri_net_effective_cost
-, sp_net_effective_cost
-, ri_effective_cost
-, sp_effective_cost
-, tag_costgroup2 as original_tagcostgroup2 
-, tag_project as original_tagproject 
+-- , ri_rate
+-- , sp_rate
+-- , ri_net_effective_cost
+-- , sp_net_effective_cost
+-- , ri_effective_cost
+-- , sp_effective_cost
+, product_sku
+, tag_costgroup2 as original_tagcostgroup2
+, tag_project as original_tagproject
 from costusage.${environment}_usage.v_awscur_selected
 -- where resource_id ='i-0a869093442623f39'
 where (resource_id is not null and resource_id <> "")
-WINDOW w as (partition by resource_id order by line_item_usage_start_date desc)
+WINDOW w as (partition by resource_id order by usage_time desc)
 union all 
 select *
 , tag_costgroup2 as original_tagcostgroup2 
@@ -439,9 +586,10 @@ create
 or replace
 VIEW costusage.${environment}_usage.v_awscur_selected_retagbyIDname
 as 
-select year
+select 
+year
 ,month
-,line_item_usage_start_date
+,usage_time
 ,bill_billing_entity
 , owner_id
 , first_value(tag_costgroup1) IGNORE NULLS over w as tag_costgroup1
@@ -455,6 +603,7 @@ select year
 , first_value(tag_client) IGNORE NULLS over w as tag_client  
 , first_value(tag_agency) IGNORE NULLS over w as tag_agency   
 , first_value(tag_product) IGNORE NULLS over w as tag_product 
+, first_value(tag_owner) IGNORE NULLS over w as tag_owner
 , first_value(tag_scope) IGNORE NULLS over w as tag_scope  
 , first_value(tag_italyambiente) IGNORE NULLS over w as tag_italyambiente   
 , first_value(tag_italycostgroup1) IGNORE NULLS over w as tag_italycostgroup1  
@@ -467,29 +616,141 @@ select year
 , service_operation
 , service_region
 , service_os
+, instance_family
 , instance_type
+, product_marketoption
+, license_model
+, product_tenancy
 , pricing_term
 , pricing_unit
+, purchase_option
+, database_edition
+, database_engine
+, deployment_option
 , usage_type
 , item_type
 , usage_amount
 , net_unblended_cost
 , ondemand_cost
 , ondemand_rate
-, ri_rate
-, sp_rate
-, ri_net_effective_cost
-, sp_net_effective_cost
-, ri_effective_cost
-, sp_effective_cost
-, original_tagcostgroup2
-, original_tagproject
+, product_sku
+-- , ri_rate
+-- , sp_rate
+-- , ri_net_effective_cost
+-- , sp_net_effective_cost
+-- , ri_effective_cost
+-- , sp_effective_cost
+, original_tagcostgroup2 
+, original_tagproject 
 from costusage.${environment}_usage.v_awscur_selected_retagbyid
 where (tag_name is not null and tag_name <> "")
-WINDOW w as (partition by tag_name order by line_item_usage_start_date desc)
+WINDOW w as (partition by tag_name order by usage_time desc)
 UNION ALL
 select * from costusage.${environment}_usage.v_awscur_selected_retagbyid where (tag_name is null or tag_name ="")
 
+
+-- COMMAND ----------
+
+-- DBTITLE 1,rpt view v_awscur_selected_reallocated
+create 
+--MATERIALIZED 
+or replace
+VIEW costusage.${environment}_usage.v_awscur_selected_reallocated
+as 
+SELECT
+  year,
+  month,
+  usage_time,
+  bill_billing_entity,
+  owner_id,
+  tag_costgroup1,
+  CASE 
+    WHEN (sa.original = 'SA') THEN sa.new 
+    WHEN (sa.original = 'SCOPE') THEN 
+      (CASE WHEN (upper(tag_scope) = 'EMEADATALAKE') THEN 'DATALAKE EMEA' ELSE sa.new END) 
+    WHEN (sa.original = 'COSTGROUP2') 
+      THEN COALESCE(tg.new, COALESCE(NULLIF(tag_costgroup2, ''), COALESCE(sa.new, ''))) 
+      ELSE COALESCE(tg.new, COALESCE(NULLIF(tag_costgroup2, ''), COALESCE(re.new, ''))) END as tag_costgroup2,
+  tag_name,
+  tag_sp,
+  tag_clusterid,
+  tag_clustername,
+  tag_env,
+  tag_project,
+  tag_client,
+  tag_agency,
+  tag_product,
+  tag_owner,
+  tag_scope,
+  tag_italyambiente,
+  tag_italycostgroup1,
+  tag_italycostgroup2,
+  tag_italycliente  , 
+  resource_id
+, aws_service
+, service_name
+, service_family
+, service_operation
+, service_region
+, service_os
+, instance_family
+, instance_type
+, product_marketoption
+, license_model
+, product_tenancy
+, pricing_term
+, pricing_unit
+, purchase_option
+, database_edition
+, database_engine
+, deployment_option
+, usage_type
+, item_type
+, usage_amount
+, net_unblended_cost
+, ondemand_cost
+, ondemand_rate
+, product_sku
+-- , ri_rate
+-- , sp_rate
+-- , ri_net_effective_cost
+-- , sp_net_effective_cost
+-- , ri_effective_cost
+-- , sp_effective_cost
+, original_tagcostgroup2 
+, original_tagproject 
+FROM
+  costusage.${environment}_usage.v_awscur_selected_retagbyIDname 
+LEFT JOIN (
+   SELECT
+     type
+   , upper(name) name
+   , upper(original) original
+   , upper(new) new
+   FROM
+      costusage.source_usage.dim_customtags
+   WHERE (type = 'owner_id') -- suggest to switch name and original
+)  sa ON owner_id = sa.name
+LEFT JOIN (
+   SELECT
+     type
+   , upper(name) name
+   , upper(original) original
+   , upper(new) new
+   FROM
+     costusage.source_usage.dim_customtags
+   WHERE (type = 'resource_id')
+)  re ON ((upper(resource_id) LIKE re.name) AND (upper(owner_id) = re.original)) 
+LEFT JOIN (
+   SELECT
+     type
+   , upper(name) name
+   , upper(original) original
+   , upper(new) new
+   FROM
+     costusage.source_usage.dim_customtags
+   WHERE ((type = 'tags') AND (name = 'CostGroup2'))
+)  tg ON (upper(COALESCE(tag_costgroup2, '')) = tg.original)
 
 -- COMMAND ----------
 
@@ -497,25 +758,56 @@ select * from costusage.${environment}_usage.v_awscur_selected_retagbyid where (
 
 create or replace view costusage.${environment}_usage.v_fact_awscur_selected
 as
-SELECT * FROM costusage.${environment}_usage.v_awscur_selected_retagbyIDname
+SELECT year,
+  month,
+  usage_time,
+  bill_billing_entity,
+  owner_id,
+  tag_costgroup1,
+  tag_costgroup2,
+  tag_name,
+  tag_sp,
+  tag_clusterid,
+  tag_clustername,
+  tag_env,
+  tag_project,
+  tag_client,
+  tag_agency,
+  tag_product,
+  tag_owner,
+  tag_scope,
+  tag_italyambiente,
+  tag_italycostgroup1,
+  tag_italycostgroup2,
+  tag_italycliente
+, resource_id
+, aws_service
+, service_name
+, service_family
+, service_operation
+, service_region
+, service_os
+, instance_family
+, instance_type
+, product_marketoption
+, license_model
+, product_tenancy
+, pricing_term
+, pricing_unit
+, purchase_option
+, database_edition
+, database_engine
+, deployment_option
+, usage_type
+, item_type
+, usage_amount
+, net_unblended_cost
+, ondemand_cost
+, ondemand_rate
+, product_sku FROM costusage.${environment}_usage.v_awscur_selected_reallocated
 where date_format(date(CONCAT(year, '-', LPAD(month, 2, '0'), '-01')), 'yyyy-MM-01') >= date_format(dateadd(MONTH, int(${from_selected}), current_date()), 'yyyy-MM-01') and date_format(date(CONCAT(year, '-', LPAD(month, 2, '0'), '-01')), 'yyyy-MM-01') < date_format(dateadd(MONTH, int(${to_selected}+1), current_date()), 'yyyy-MM-01')
 --and service_name ='Amazon Registrar' --check registray
 
-
--- COMMAND ----------
-
--- DBTITLE 1,validate parameter from date to date
-select year(date_format(dateadd(MONTH, ${from_selected}, current_date()), 'yyyy-MM-01')) * 100 + month(date_format(dateadd(MONTH, ${from_selected}, current_date()), 'yyyy-MM-01')) as selected_from
-,year(date_format(dateadd(MONTH, ${to_selected}, current_date()), 'yyyy-MM-01')) * 100 + month(date_format(dateadd(MONTH, ${to_selected}, current_date()), 'yyyy-MM-01')) as selected_to 
-
-
--- COMMAND ----------
-
--- DBTITLE 1,validate selected from date to date
-select 'v_fact_awscur_selected',min(year*100+month),max(year*100+month)
-,date_format(dateadd(MONTH, int(${from_selected}), current_date()), 'yyyy-MM-01') as registray_date,count(1) from costusage.${environment}_usage.v_fact_awscur_selected 
-union all
-select 'v_awscur_selected',min(year*100+month),max(year*100+month),date_format(dateadd(MONTH, int(${from_selected}), current_date()), 'yyyy-MM-01') as registray_date,count(1) from costusage.${environment}_usage.v_awscur_selected 
 
 -- COMMAND ----------
 
@@ -524,33 +816,22 @@ select 'v_awscur_selected',min(year*100+month),max(year*100+month),date_format(d
 
 -- COMMAND ----------
 
--- DBTITLE 1,2024 fact_awscur
-DROP TABLE IF EXISTS costusage.${environment}_usage.fact_awscur;
-create or replace table costusage.${environment}_usage.fact_awscur
-using delta
-LOCATION 's3://pm-epsilon-athena/databricks/${environment}/${environment}_usage/fact_awscur/'
-AS
-select * from costusage.${environment}_usage.v_fact_awscur_selected -- where (1=0) ;
-
-
-
--- COMMAND ----------
-
+-- DBTITLE 1,fact_awscur_previous
 DROP TABLE IF EXISTS costusage.${environment}_usage.fact_awscur_previous;
 create or replace table costusage.${environment}_usage.fact_awscur_previous
 using delta
 LOCATION 's3://pm-epsilon-athena/databricks/${environment}/${environment}_usage/fact_awscur_previous/'
 AS
-select * from costusage.${environment}_usage.v_fact_awscur_previous -- where (1=0) ;
+select * from costusage.${environment}_usage.v_fact_awscur_previous -- where (1=0);
 
 -- COMMAND ----------
 
 -- DBTITLE 1,retag with customtags
-UPDATE costusage.${environment}_usage.fact_awscur
+UPDATE costusage.${environment}_usage.fact_awscur_previous
 SET tag_costgroup2 = case when upper(ltrim(rtrim(tag_scope))) ='EMEADATALAKE' then 'DATALAKE EMEA' else upper(ltrim(rtrim(COALESCE(tag_costgroup2,'')))) end
 where tag_costgroup2 != upper(ltrim(rtrim(COALESCE(tag_costgroup2,'')))) or (upper(ltrim(rtrim(tag_scope))) ='EMEADATALAKE' and tag_costgroup2 <> 'DATALAKE EMEA');
 
-MERGE INTO costusage.${environment}_usage.fact_awscur AS aws
+MERGE INTO costusage.${environment}_usage.fact_awscur_previous AS aws
 USING costusage.source_usage.dim_customtags AS dim
 ON aws.owner_id = dim.name
 AND dim.type = 'owner_id' 
@@ -559,36 +840,41 @@ WHEN MATCHED THEN
 UPDATE SET aws.tag_costgroup2 = upper(trim(dim.new));
 
 
-MERGE INTO costusage.${environment}_usage.fact_awscur AS aws
+MERGE INTO costusage.${environment}_usage.fact_awscur_previous AS aws
 USING costusage.source_usage.dim_customtags AS dim
 ON aws.owner_id = dim.name
 AND dim.type = 'owner_id' 
 AND dim.original = 'CostGroup2'
 AND aws.tag_costgroup2 = ''
 WHEN MATCHED THEN 
-UPDATE SET aws.tag_costgroup2 = upper(ltrim(rtrim(dim.new)));
+UPDATE SET aws.tag_costgroup2 = upper(trim(dim.new));
 
-MERGE INTO costusage.${environment}_usage.fact_awscur AS aws
+MERGE INTO costusage.${environment}_usage.fact_awscur_previous AS aws
 USING costusage.source_usage.dim_customtags AS dim
-ON aws.tag_costgroup2 = upper(ltrim(rtrim(dim.original)))
+ON aws.tag_costgroup2 = upper(trim(dim.original))
 AND dim.type = 'tags' 
 AND dim.name = 'CostGroup2'
-and aws.tag_costgroup2 <> upper(ltrim(rtrim(dim.new)))
+and aws.tag_costgroup2 <> upper(trim(dim.new))
 WHEN MATCHED THEN 
-UPDATE SET aws.tag_costgroup2 = upper(ltrim(rtrim(dim.new)));
+UPDATE SET aws.tag_costgroup2 = upper(trim(dim.new));
 
-MERGE INTO costusage.${environment}_usage.fact_awscur AS aws
+MERGE INTO costusage.${environment}_usage.fact_awscur_previous AS aws
 USING costusage.source_usage.dim_customtags AS dim
 ON aws.owner_id = dim.original
 AND dim.type = 'resource_id' 
 AND aws.resource_id like dim.name
-and aws.tag_costgroup2 <> upper(ltrim(rtrim(dim.new)))
+and aws.tag_costgroup2 <> upper(trim(dim.new))
 WHEN MATCHED THEN 
-UPDATE SET aws.tag_costgroup2 = upper(ltrim(rtrim(dim.new)));
+UPDATE SET aws.tag_costgroup2 = upper(trim(dim.new));
 
-UPDATE costusage.${environment}.fact_awscur
-SET tag_costgroup2 = upper(ltrim(rtrim(COALESCE(tag_costgroup2,'')))) 
-where tag_costgroup2 <> upper(ltrim(rtrim(COALESCE(tag_costgroup2,''))))
+UPDATE costusage.${environment}_usage.fact_awscur_previous
+SET tag_costgroup2 = upper(trim(COALESCE(tag_costgroup2,'')))
+where tag_costgroup2 <> upper(trim(COALESCE(tag_costgroup2,'')))
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC # insert new data
 
 -- COMMAND ----------
 
@@ -623,15 +909,10 @@ AND (
 
 -- COMMAND ----------
 
--- MAGIC %md
--- MAGIC ### option: insert new data
-
--- COMMAND ----------
-
 -- DBTITLE 1,aggrgate previous month date
 
 delete from costusage.${environment}_usage.fact_awscur
-where year*100+month in (select year*100+month from costusage.${environment}_usage.v_fact_awscur_previous)
+where year*100+month in (select year*100+month from costusage.${environment}_usage.v_fact_awscur_previous);
 
 
 insert into costusage.${environment}_usage.fact_awscur(year,month,line_)
@@ -641,14 +922,23 @@ where year*100+month not in (select year*100+month from  costusage.${environment
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC ## TAG REALLOCATED DONE
+-- MAGIC ### TAG REALLOCATED DONE
 -- MAGIC
--- MAGIC #### EC2/RN BENEFIT REALLOCATE
+-- MAGIC
 
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC ## query for USAA
+-- MAGIC # EC2/RN BENEFIT REALLOCATE
+
+-- COMMAND ----------
+
+
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC # query for USAA
 -- MAGIC
 
 -- COMMAND ----------

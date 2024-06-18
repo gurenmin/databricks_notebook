@@ -25,16 +25,31 @@ CREATE OR REPLACE VIEW costusage.source_usage.dim_dbutags_current
 AS
 WITH LatestUsage AS (
   SELECT
-  case when sku_name like '%JOB%' then usage_metadata.job_id
-  when sku_name like '%SQL%' then usage_metadata.warehouse_id
-  else usage_metadata.cluster_id end as entity_id,
+  case 
+  when usage_metadata.job_id is not null then concat('#job/',usage_metadata.job_id)
+  when usage_metadata.warehouse_id is not null then concat('sql/warehouses/',usage_metadata.warehouse_id)
+  when usage_metadata.endpoint_id is not null and usage.billing_origin_product ='VECTOR_SEARCH' then concat('compute/vector-search/',usage_metadata.endpoint_name)
+  when custom_tags.EndpointId is not null and usage.billing_origin_product ='MODEL_SERVING' then concat('ml/endpoints/',custom_tags.EndpointId)
+  when usage_metadata.notebook_id is not null then concat('#notebook/',usage_metadata.notebook_id)
+  when usage_metadata.instance_pool_id is not null then concat('#instance_pool/',usage_metadata.instance_pool_id)
+  when usage_metadata.dlt_pipeline_id is not null then concat('pipelines/',usage_metadata.dlt_pipeline_id)
+  else concat('clusters/', usage_metadata.cluster_id)  end as entity_id,
     usage_start_time,
     custom_tags,
     --sku_name,
     usage_metadata,
-    ROW_NUMBER() OVER (PARTITION BY case when sku_name like '%JOB%' then usage_metadata.job_id
-  when sku_name like '%SQL%' then usage_metadata.warehouse_id
-  else usage_metadata.cluster_id end ORDER BY usage_start_time DESC) AS rn
+    ROW_NUMBER() OVER (PARTITION BY   
+      case 
+  when usage_metadata.job_id is not null then concat('#job/',usage_metadata.job_id)
+  when usage_metadata.warehouse_id is not null then concat('sql/warehouses/',usage_metadata.warehouse_id)
+  when usage_metadata.endpoint_id is not null and usage.billing_origin_product ='VECTOR_SEARCH' then concat('compute/vector-search/',usage_metadata.endpoint_name)
+  when custom_tags.EndpointId is not null and usage.billing_origin_product ='MODEL_SERVING' then concat('ml/endpoints/',custom_tags.EndpointId)
+  when usage_metadata.notebook_id is not null then concat('#notebook/',usage_metadata.notebook_id)
+  when usage_metadata.instance_pool_id is not null then concat('#instance_pool/',usage_metadata.instance_pool_id)
+  when usage_metadata.dlt_pipeline_id is not null then concat('pipelines/',usage_metadata.dlt_pipeline_id)
+  else concat('clusters/', usage_metadata.cluster_id)  end
+  
+  ORDER BY usage_start_time DESC) AS rn
   FROM system.billing.usage
   where custom_tags.CostGroup2 is not null
   -- where usage_date >= date_format(current_date(),'yyyy-MM-01')
