@@ -57,6 +57,33 @@ OPTIONS (
 
 -- COMMAND ----------
 
+CREATE EXTERNAL TABLE  IF NOT EXISTS costusage.aws_usage.aws_costusage_12m
+(
+  year
+  ,"month"
+  ,"owner_id"
+  "tag_costgroup2"
+  ,"aws_service"
+  ,"service_family"
+  ,"item_type"
+  ,"sum_net_unblended_cost" float,"accountname"
+  `date` date,
+  `aws_detailed_service` STRING,
+  `usage` float,
+  `products` STRING,
+  `category` STRING,
+  `group` STRING,
+  `jobcode` STRING
+)
+USING csv
+OPTIONS (
+  'header' 'true',
+  'path' 's3://pm-epsilon-athena/databricks/dim_tables/aws_costusage/awscost.csv',
+  'mergeSchema' 'true'
+); 
+
+-- COMMAND ----------
+
 REFRESH TABLE costusage.aws_usage.aws_costusage_2024_current;
 select * from costusage.aws_usage.aws_costusage_2024_current order by date desc 
 
@@ -240,12 +267,12 @@ ELSE product_product_family END) service_family
 , line_item_net_unblended_cost net_unblended_cost
 , pricing_public_on_demand_cost ondemand_cost
 , pricing_public_on_demand_rate ondemand_rate
--- , (CASE WHEN (line_item_line_item_type = 'RIFee') THEN line_item_unblended_rate ELSE '0' END) ri_rate
--- , savings_plan_savings_plan_rate sp_rate
--- , reservation_net_effective_cost ri_net_effective_cost
--- , savings_plan_net_savings_plan_effective_cost sp_net_effective_cost
--- , reservation_effective_cost ri_effective_cost
--- , savings_plan_savings_plan_effective_cost sp_effective_cost
+, (CASE WHEN (line_item_line_item_type = 'RIFee') THEN line_item_unblended_rate ELSE '0' END) ri_rate
+, savings_plan_savings_plan_rate sp_rate
+, reservation_net_effective_cost ri_net_effective_cost
+, savings_plan_net_savings_plan_effective_cost sp_net_effective_cost
+, reservation_effective_cost ri_effective_cost
+, savings_plan_savings_plan_effective_cost sp_effective_cost
 , product_sku
 FROM
   costusage.source_usage.source_awscur cur
@@ -320,12 +347,12 @@ select year
 , net_unblended_cost
 , ondemand_cost
 , ondemand_rate
--- , ri_rate
--- , sp_rate
--- , ri_net_effective_cost
--- , sp_net_effective_cost
--- , ri_effective_cost
--- , sp_effective_cost
+, ri_rate
+, sp_rate
+, ri_net_effective_cost
+, sp_net_effective_cost
+, ri_effective_cost
+, sp_effective_cost
 , product_sku
 , tag_costgroup2 as original_tagcostgroup2
 , tag_project as original_tagproject
@@ -398,12 +425,12 @@ year
 , net_unblended_cost
 , ondemand_cost
 , ondemand_rate
--- , ri_rate
--- , sp_rate
--- , ri_net_effective_cost
--- , sp_net_effective_cost
--- , ri_effective_cost
--- , sp_effective_cost
+, ri_rate
+, sp_rate
+, ri_net_effective_cost
+, sp_net_effective_cost
+, ri_effective_cost
+, sp_effective_cost
 , product_sku
 , original_tagcostgroup2 
 , original_tagproject 
@@ -479,6 +506,12 @@ SELECT
 , ondemand_cost
 , ondemand_rate
 , product_sku
+, ri_rate
+, sp_rate
+, ri_net_effective_cost
+, sp_net_effective_cost
+, ri_effective_cost
+, sp_effective_cost
 , original_tagcostgroup2 
 , original_tagproject 
 FROM
@@ -520,7 +553,55 @@ LEFT JOIN (
 create
 or replace VIEW costusage.${environment}_usage.v_fact_awscur_previous as
 SELECT
-  *
+  year,
+  month,
+  usage_time,
+  bill_billing_entity,
+  owner_id,
+  tag_costgroup1,
+  tag_costgroup2,
+  tag_name,
+  tag_sp,
+  tag_clusterid,
+  tag_clustername,
+  tag_env,
+  tag_project,
+  tag_client,
+  tag_agency,
+  tag_product,
+  tag_owner,
+  tag_scope,
+  tag_italyambiente,
+  tag_italycostgroup1,
+  tag_italycostgroup2,
+  tag_italycliente
+, resource_id
+, aws_service
+, service_name
+, service_family
+, service_operation
+, service_region
+, service_os
+, instance_family
+, instance_type
+, product_marketoption
+, license_model
+, product_tenancy
+, pricing_term
+, pricing_unit
+, purchase_option
+, database_edition
+, database_engine
+, deployment_option
+, usage_type
+, item_type
+, usage_amount
+, net_unblended_cost
+, ondemand_cost
+, ondemand_rate
+, product_sku
+-- , original_tagcostgroup2 
+-- , original_tagproject
 FROM
   costusage.${environment}_usage.v_awscur_previous_reallocated
 where
@@ -539,7 +620,57 @@ where
 
 create or replace view costusage.${environment}_usage.v_fact_awscur_current
 as
-SELECT * FROM costusage.${environment}_usage.v_awscur_previous_reallocated
+SELECT 
+ year,
+  month,
+  usage_time,
+  bill_billing_entity,
+  owner_id,
+  tag_costgroup1,
+  tag_costgroup2,
+  tag_name,
+  tag_sp,
+  tag_clusterid,
+  tag_clustername,
+  tag_env,
+  tag_project,
+  tag_client,
+  tag_agency,
+  tag_product,
+  tag_owner,
+  tag_scope,
+  tag_italyambiente,
+  tag_italycostgroup1,
+  tag_italycostgroup2,
+  tag_italycliente
+, resource_id
+, aws_service
+, service_name
+, service_family
+, service_operation
+, service_region
+, service_os
+, instance_family
+, instance_type
+, product_marketoption
+, license_model
+, product_tenancy
+, pricing_term
+, pricing_unit
+, purchase_option
+, database_edition
+, database_engine
+, deployment_option
+, usage_type
+, item_type
+, usage_amount
+, net_unblended_cost
+, ondemand_cost
+, ondemand_rate
+, product_sku
+-- , original_tagcostgroup2 
+-- , original_tagproject 
+ FROM costusage.${environment}_usage.v_awscur_previous_reallocated
 where (month = month(date_format(dateadd(MONTH, 0, current_date()), 'yyyy-MM-01')) and year = year(date_format(dateadd(MONTH, 0, current_date()), 'yyyy-MM-01')))
 
 
@@ -616,12 +747,12 @@ ELSE product_product_family END) service_family
 , line_item_net_unblended_cost net_unblended_cost
 , pricing_public_on_demand_cost ondemand_cost
 , pricing_public_on_demand_rate ondemand_rate
--- , (CASE WHEN (line_item_line_item_type = 'RIFee') THEN line_item_unblended_rate ELSE '0' END) ri_rate
--- , savings_plan_savings_plan_rate sp_rate
--- , reservation_net_effective_cost ri_net_effective_cost
--- , savings_plan_net_savings_plan_effective_cost sp_net_effective_cost
--- , reservation_effective_cost ri_effective_cost
--- , savings_plan_savings_plan_effective_cost sp_effective_cost
+, (CASE WHEN (line_item_line_item_type = 'RIFee') THEN line_item_unblended_rate ELSE '0' END) ri_rate
+, savings_plan_savings_plan_rate sp_rate
+, reservation_net_effective_cost ri_net_effective_cost
+, savings_plan_net_savings_plan_effective_cost sp_net_effective_cost
+, reservation_effective_cost ri_effective_cost
+, savings_plan_savings_plan_effective_cost sp_effective_cost
 , product_sku
 FROM
   costusage.source_usage.source_awscur cur
@@ -704,6 +835,7 @@ year
 , sp_net_effective_cost
 , ri_effective_cost
 , sp_effective_cost
+, product_sku
 , tag_costgroup2 as original_tagcostgroup2
 , tag_project as original_tagproject
 from costusage.${environment}_usage.v_awscur_selected
@@ -777,6 +909,7 @@ year
 , sp_net_effective_cost
 , ri_effective_cost
 , sp_effective_cost
+, product_sku
 , original_tagcostgroup2 
 , original_tagproject 
 from costusage.${environment}_usage.v_awscur_selected_retagbyid
@@ -853,6 +986,7 @@ SELECT
 , sp_net_effective_cost
 , ri_effective_cost
 , sp_effective_cost
+, product_sku
 , original_tagcostgroup2 
 , original_tagproject 
 FROM
@@ -893,7 +1027,55 @@ LEFT JOIN (
 -- DBTITLE 1,view v_fact_awscur_selected
 create or replace view costusage.${environment}_usage.v_fact_awscur_selected
 as
-SELECT * FROM costusage.${environment}_usage.v_awscur_selected_reallocated
+SELECT year,
+  month,
+  usage_time,
+  bill_billing_entity,
+  owner_id,
+  tag_costgroup1,
+  tag_costgroup2,
+  tag_name,
+  tag_sp,
+  tag_clusterid,
+  tag_clustername,
+  tag_env,
+  tag_project,
+  tag_client,
+  tag_agency,
+  tag_product,
+  tag_owner,
+  tag_scope,
+  tag_italyambiente,
+  tag_italycostgroup1,
+  tag_italycostgroup2,
+  tag_italycliente
+, resource_id
+, aws_service
+, service_name
+, service_family
+, service_operation
+, service_region
+, service_os
+, instance_family
+, instance_type
+, product_marketoption
+, license_model
+, product_tenancy
+, pricing_term
+, pricing_unit
+, purchase_option
+, database_edition
+, database_engine
+, deployment_option
+, usage_type
+, item_type
+, usage_amount
+, net_unblended_cost
+, ondemand_cost
+, ondemand_rate
+, product_sku
+, original_tagcostgroup2 
+, original_tagproject FROM costusage.${environment}_usage.v_awscur_selected_reallocated
 where ((service_name = 'Amazon Registrar' and date_format(date(CONCAT(year, '-', LPAD(month, 2, '0'), '-01')), 'yyyy-MM-01') < date_format(dateadd(MONTH, int(${to_selected}+1), current_date()), 'yyyy-MM-01') )
 or
 year*100+month < year(date_format(dateadd(MONTH, ${to_selected}+1, current_date()), 'yyyy-MM-01')) * 100 + month(date_format(dateadd(MONTH, ${to_selected}+1, current_date()), 'yyyy-MM-01')))
@@ -935,7 +1117,53 @@ select distinct year*100+month from costusage.${environment}_usage.v_fact_awscur
 insert into
   costusage.${environment}_usage.fact_awscur
 select
-  *
+  year,
+  month,
+  usage_time,
+  bill_billing_entity,
+  owner_id,
+  tag_costgroup1,
+  tag_costgroup2,
+  tag_name,
+  tag_sp,
+  tag_clusterid,
+  tag_clustername,
+  tag_env,
+  tag_project,
+  tag_client,
+  tag_agency,
+  tag_product,
+  tag_owner,
+  tag_scope,
+  tag_italyambiente,
+  tag_italycostgroup1,
+  tag_italycostgroup2,
+  tag_italycliente
+, resource_id
+, aws_service
+, service_name
+, service_family
+, service_operation
+, service_region
+, service_os
+, instance_family
+, instance_type
+, product_marketoption
+, license_model
+, product_tenancy
+, pricing_term
+, pricing_unit
+, purchase_option
+, database_edition
+, database_engine
+, deployment_option
+, usage_type
+, item_type
+, usage_amount
+, net_unblended_cost
+, ondemand_cost
+, ondemand_rate
+, product_sku
 from
   costusage.${environment}_usage.v_fact_awscur_previous
 where
@@ -994,9 +1222,103 @@ USING costusage.source_usage.dim_customtags AS dim
 
 create or replace view costusage.${environment}_usage.v_fact_awscur
 as
-select * from costusage.${environment}_usage.fact_awscur
+select year,
+  month,
+  usage_time,
+  bill_billing_entity,
+  owner_id,
+  tag_costgroup1,
+  tag_costgroup2,
+  tag_name,
+  tag_sp,
+  tag_clusterid,
+  tag_clustername,
+  tag_env,
+  tag_project,
+  tag_client,
+  tag_agency,
+  tag_product,
+  tag_owner,
+  tag_scope,
+  tag_italyambiente,
+  tag_italycostgroup1,
+  tag_italycostgroup2,
+  tag_italycliente
+, resource_id
+, aws_service
+, service_name
+, service_family
+, service_operation
+, service_region
+, service_os
+, instance_family
+, instance_type
+, product_marketoption
+, license_model
+, product_tenancy
+, pricing_term
+, pricing_unit
+, purchase_option
+, database_edition
+, database_engine
+, deployment_option
+, usage_type
+, item_type
+, usage_amount
+, net_unblended_cost
+, ondemand_cost
+, ondemand_rate
+, product_sku
+ from costusage.${environment}_usage.fact_awscur
 union all
-select * from costusage.${environment}_usage.v_fact_awscur_current
+select year,
+  month,
+  usage_time,
+  bill_billing_entity,
+  owner_id,
+  tag_costgroup1,
+  tag_costgroup2,
+  tag_name,
+  tag_sp,
+  tag_clusterid,
+  tag_clustername,
+  tag_env,
+  tag_project,
+  tag_client,
+  tag_agency,
+  tag_product,
+  tag_owner,
+  tag_scope,
+  tag_italyambiente,
+  tag_italycostgroup1,
+  tag_italycostgroup2,
+  tag_italycliente
+, resource_id
+, aws_service
+, service_name
+, service_family
+, service_operation
+, service_region
+, service_os
+, instance_family
+, instance_type
+, product_marketoption
+, license_model
+, product_tenancy
+, pricing_term
+, pricing_unit
+, purchase_option
+, database_edition
+, database_engine
+, deployment_option
+, usage_type
+, item_type
+, usage_amount
+, net_unblended_cost
+, ondemand_cost
+, ondemand_rate
+, product_sku
+ from costusage.${environment}_usage.v_fact_awscur_current
 
 -- COMMAND ----------
 
@@ -1254,6 +1576,86 @@ group by
 
 -- COMMAND ----------
 
+-- DBTITLE 1,query by account/costgroup2/usage
+select
+  date_format(concat(year, '-', month, '-01'), 'yyyy-MM-dd') as usage_month,
+  a.accountname,
+  g.group,
+  tag_costgroup2,
+  aws_service,
+  sum(net_unblended_cost) sum_net_cost
+from
+  costusage.aws_usage.v_fact_awscur_selected as f
+  left join costusage.source_usage.dim_accounts as a on f.owner_id = a.ownerid
+  left join costusage.aws_usage.aws_costusage_2024_current as g on f.tag_costgroup2 = g.products
+WHERE
+  (
+    g.group = 'PM-US'
+    or g.group = 'GROWTH-OS'
+  )
+  and (
+    tag_costgroup2 like 'OS_%'
+    or tag_costgroup2 IN (
+      UPPER('Taxonomy'),
+      UPPER('MDM'),
+      UPPER('Scenario Planner'),
+      UPPER('Maximizer')
+    )
+  )
+  and f.item_type like '%Usage' and f.aws_service not like '%Market%'
+group by
+  year,
+  month,
+  owner_id,
+  tag_costgroup2,
+  aws_service,
+  a.accountname,
+  g.group
+-- union all
+-- SELECT
+--   date_format(concat(year, '-', month, '-01'), 'yyyy-MM-dd') as usage_month,
+--   a.accountname,
+--   'OS',
+--   'TOTAL',
+--   aws_service,
+--   -- SUM(f.usage_amount*f.ondemand_rate) as ondemand_cost,
+--   -- sum(ondemand_cost) as sum_odcost,
+--   case
+--     when sum(net_unblended_cost) = 0 then sum(ondemand_cost) * 0.82
+--     else sum(ondemand_cost)
+--   end as sum_net_cost
+-- from
+--   costusage.aws_usage.fact_awscur as f
+--   left join costusage.source_usage.dim_accounts as a on f.owner_id = a.ownerid
+--   left join costusage.aws_usage.aws_costusage_2024_current as g on f.tag_costgroup2 = g.products
+-- WHERE
+--   (
+--     g.group = 'PM-US'
+--     or g.group = 'GROWTH-OS'
+--   )
+--   and (
+--     tag_costgroup2 like 'OS_%'
+--     or tag_costgroup2 IN (
+--       UPPER('Taxonomy'),
+--       UPPER('MDM'),
+--       UPPER('Scenario Planner'),
+--       UPPER('Maximizer')
+--     )
+--   )
+-- group by
+--   year,
+--   month,
+--   owner_id,
+--   aws_service,
+--   a.accountname 
+  
+  
+  -- item_type tax only net
+  -- item_type discounted_usage/savingsplan no net but od need to check ri/sp cost -- RIFee none
+  -- aws_service marketplace, only net
+
+-- COMMAND ----------
+
 -- DBTITLE 1,## Queries for OpenSeach Test/Prod Usage
 select
   date_format(usage_time, 'yyyy-MM-dd') as usage_date,
@@ -1273,3 +1675,11 @@ group by
   pricing_unit,
   resource_id,
   date_format(usage_time, 'yyyy-MM-dd')
+
+-- COMMAND ----------
+
+
+
+-- COMMAND ----------
+
+

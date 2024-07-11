@@ -21,6 +21,15 @@ having  count(1) > 1
 
 -- COMMAND ----------
 
+select * from costusage.${environment}_usage.fact_dbrusage where entity_id like '%sql/warehouses/69de5369af824c8c%' limit 10
+
+-- COMMAND ----------
+
+select * from costusage.source_usage.dim_dbutags_current where entity_id like '%sql/warehouses/69de5369af824c8c%'
+
+
+-- COMMAND ----------
+
 -- DBTITLE 1,check tag
 SELECT distinct max(year*100+month) as yearmonth,ws.workspace,CostGroup2,sku_name,entity_type,entity_id,project,
 
@@ -48,8 +57,28 @@ order by yearmonth desc,usage_cost_discounted desc
 
 -- COMMAND ----------
 
+MERGE INTO costusage.${environment}_usage.fact_dbrusage as target
+USING costusage.source_usage.dim_dbutags_current as source
+ON source.entity_id = target.entity_id 
+WHEN MATCHED THEN
+  UPDATE SET 
+  target.Agency = source.Agency,
+  target.CostGroup1 = source.CostGroup1,
+  target.CostGroup2 = source.CostGroup2,
+  target.Project = source.Project,
+  target.Client=source.Client;
+-- WHEN NOT MATCHED THEN
+--   INSERT *
+-- WHEN NOT MATCHED BY SOURCE THEN
+--   DELETE
+ 
+
+-- COMMAND ----------
+
 update costusage.${environment}_usage.fact_dbrusage set  CostGroup1 = 'DATABRICKS-US',CostGroup2 = 'DTI-US-DATABRICKS', Agency ='DTI'
 where entity_id IN('compute/vector-search/vector-search-demo-endpoint','compute/vector-search/test_brief_endpoint','compute/vector-search/test_briefs_endpoint','compute/clusters/0112-170613-wq6sctxg','compute/clusters/0328-140330-c0355dg5','jobs/103898729470132','compute/clusters/0508-180925-vfjo0jyj','compute/clusters/0408-151606-8qnbozcy','compute/clusters/0308-190556-4ctsuiuh','compute/clusters/0512-180043-2br8mp9d','compute/clusters/0506-135347-6f7nu1s','compute/clusters/0302-162124-3tonkssh','compute/clusters/0325-135442-4sexw62d','jobs/1060879989389256','jobs/179785376153418','compute/clusters/0131-214851-ld4rsxv9','jobs/947797074375169','jobs/990031306117535','jobs/514650731549945','jobs/38954163915483','compute/clusters/0326-161013-5swqf2pl','jobs/244865951581185','jobs/705264854694377','jobs/358614874734949','jobs/85304385831480','compute/clusters/0506-135347-6f7nu1s1','jobs/507602322602250','jobs/991719229836706','jobs/260321256170389','jobs/659160384728597','jobs/392305391273751') and CostGroup2 is NULL; 
+
+
 update costusage.${environment}_usage.fact_dbrusage set  CostGroup1 = 'DATABRICKS-US',CostGroup2 = 'PAS-US-DATABRICKS', Agency ='PMX'
 where entity_id like '%fdad88a1-3fad-489e-bb30-2a548bec3461'
 or entity_id in('jobs/319299244964279','jobs/225068839607863','jobs/421086402362351','jobs/535964478789572','jobs/189446756530471','jobs/423171645528900','jobs/491239544707586','jobs/131568715132866','jobs/740588666973468','jobs/882247704898967','jobs/39512403186443','jobs/997615897566422','jobs/402181099492590','jobs/662192930665737','jobs/226970914059696','jobs/239645347448950','jobs/615337332430672','jobs/416518544878121','jobs/18612505372114','jobs/410540409793420','compute/clusters/0311-161025-5kmfs88b','jobs/858862069306772','jobs/915694970603697','jobs/446541587027532','jobs/1055711113155033','jobs/188705887503938') and CostGroup2 is NULL; 
@@ -75,35 +104,6 @@ UPDATE costusage.${environment}_usage.fact_dbrusage
 SET usage_cost = usage_quantity*sku_listed_rate
 , usage_cost_discounted = usage_quantity*sku_contract_rate
 where sku_name ='ENTERPRISE_ALL_PURPOSE_SERVERLESS_COMPUTE_US_EAST_N_VIRGINIA';
-
--- COMMAND ----------
-
--- DBTITLE 1,Update the Missing Tag data
-
-update costusage.${environment}_usage.fact_dbrusage set  CostGroup1 = 'DATABRICKS-US',CostGroup2 = 'PAS-US-DATABRICKS', Agency ='PMX'
-where entity_id IN('5f557fc442276d4b','035ac6f21ccc1964','992760803193755','755918010195069','624011171531522','1066130183161618','653911635989676','319299244964279') and CostGroup2 is NULL; --7
-
-update costusage.${environment}_usage.fact_dbrusage set CostGroup1 = 'DATABRICKS-US',CostGroup2 = 'DTI-US-DATABRICKS', Agency ='DTI'
-where entity_id IN ('10a4194063759e3e','1017-132528-asb7xypf','4280ddc76cc9c8c5','0205-214648-ho38ymfl','0828-200031-x41luawz','420ff315adb2ac4b','211309913079754','0725-000039-24m8il3s','1205-215642-8pec9xx3','419b5d44cdd383fe','0904-173807-5d2ttobg','7018311965ab23a9','0904-183030-vd11d530','440345718949297','0807-192658-q147sub6','0830-175939-wlh7us8u','e46f166c2d7b1f8f','0725-004916-m0ibwzzo','402b96c44dbbc909','727020076788137','0727-195903-jwjevzeh','0725-004916-m0ibwzzo','60f6a728df553076','682a33ca7925dbea','0207-193402-9stz71qw','80b8b0590afa530d','80b8b0590afa530d','10a4194063759e3e') and CostGroup2 is NULL; --57
-
-update costusage.${environment}_usage.fact_dbrusage set CostGroup1 = 'DATABRICKS-US',CostGroup2 = 'CMS-US-DATABRICKS', Agency ='DTI' where entity_id IN ('716544031961910','143586412148325') and CostGroup2 is NULL; --1
-
-update costusage.${environment}_usage.fact_dbrusage set CostGroup1 = 'DATABRICKS-US',CostGroup2 = 'DTI-US-DATABRICKS', Agency ='DTI',Project ='AutLoadRunner-Manual' where entity_id ='577200325812575'; --1
-
-update costusage.${environment}_usage.fact_dbrusage set CostGroup1 = 'DATABRICKS-US',CostGroup2 = 'DTI-US-DATABRICKS', Agency ='DTI',Project ='DCM_Aggregate_test_bn' where entity_id ='471665173815680'; --3
-
-update costusage.${environment}_usage.fact_dbrusage set CostGroup1 = 'DATABRICKS-US',CostGroup2 = 'DTI-US-DATABRICKS', Agency ='DTI',Project ='DBM_Daily_New' where entity_id ='349655591459924'; --3
-
-
-update costusage.${environment}_usage.fact_dbrusage set CostGroup1 = 'DATABRICKS-US',CostGroup2 = 'DTI-US-DATABRICKS', Agency ='DTI',Project ='VECTOR_SEARCH' where (entity_id is null or  entity_id like '%endpoint') and sku_name ='ENTERPRISE_SERVERLESS_REAL_TIME_INFERENCE_US_EAST_N_VIRGINIA' and CostGroup2 is NULL and workspace_id in ('1512882422162025'); 
-
-update costusage.${environment}_usage.fact_dbrusage set CostGroup1 = 'DATABRICKS-US',CostGroup2 = 'DTI-US-DATABRICKS', Agency ='DTI',Project ='DLT Pipeline' where (entity_id is null or entity_id like 'pipelines%') and CostGroup2 is NULL and workspace_id in ('3339421385882115') and sku_name = 'ENTERPRISE_SERVERLESS_SQL_COMPUTE_US_EAST_N_VIRGINIA'; 
-
-
-update costusage.${environment}_usage.fact_dbrusage set CostGroup1 = 'DATABRICKS-US',CostGroup2 = 'DTI-US-DATABRICKS', Agency ='DTI' where (workspace_id ='7509956532948377' or workspace_id ='1512882422162025')  and CostGroup2 is NULL; --DEV and TEST 14
-
-update costusage.${environment}_usage.fact_dbrusage set CostGroup1 = 'DATABRICKS-US'
-where CostGroup1 is NULL;
 
 -- COMMAND ----------
 

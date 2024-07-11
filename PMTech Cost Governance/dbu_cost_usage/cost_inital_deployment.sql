@@ -336,6 +336,17 @@ left join
   costusage.source_usage.dim_skupricing as sku on usage.sku_name = sku.sku_name and sku.enddate is null
 left join 
  (select account_id,price_start_time as startdate,price_end_time as enddate,sku_name,pricing.default as sku_listed_rate from system.billing.list_prices) as list_sku on usage.sku_name = list_sku.sku_name and list_sku.enddate is null
+-- Cross- Service
+-- SKU Group(s)* Discount %
+-- AWS 12.00%
+-- *For SKUs included in Cross-Service SKU Groups, as well as any exclusions from Cross-Service SKU Groups, please refer
+-- to the SKU Group List.
+-- Service-Specific SKU Groups Discount %
+-- AWS All-Purpose Compute 47.69%
+-- AWS All-Purpose Compute Photon 47.69%
+-- AWS Jobs Compute 56.00%
+-- AWS Jobs Compute Photon 56.00%
+-- AWS SQL Compute 22.70%
 -- left join
 --   costusage.source_usage.dim_workspaces as workspace on usage.workspace_id = workspace.workspace_id
 where usage_date >= date_format(current_date(),'yyyy-MM-01')
