@@ -21,11 +21,11 @@ having  count(1) > 1
 
 -- COMMAND ----------
 
-select * from costusage.${environment}_usage.fact_dbrusage where entity_id like '%sql/warehouses/69de5369af824c8c%' limit 10
+select * from costusage.${environment}_usage.fact_dbrusage where entity_id like '%sql/warehouses/5af5faa4850156e2%' limit 10
 
 -- COMMAND ----------
 
-select * from costusage.source_usage.dim_dbutags_current where entity_id like '%sql/warehouses/69de5369af824c8c%'
+select * from costusage.source_usage.dim_dbutags_current where entity_id like '%#notebook/142472813652764%'
 
 
 -- COMMAND ----------
@@ -76,29 +76,85 @@ WHEN MATCHED THEN
 -- COMMAND ----------
 
 update costusage.${environment}_usage.fact_dbrusage set  CostGroup1 = 'DATABRICKS-US',CostGroup2 = 'DTI-US-DATABRICKS', Agency ='DTI'
-where entity_id IN('compute/vector-search/vector-search-demo-endpoint','compute/vector-search/test_brief_endpoint','compute/vector-search/test_briefs_endpoint','compute/clusters/0112-170613-wq6sctxg','compute/clusters/0328-140330-c0355dg5','jobs/103898729470132','compute/clusters/0508-180925-vfjo0jyj','compute/clusters/0408-151606-8qnbozcy','compute/clusters/0308-190556-4ctsuiuh','compute/clusters/0512-180043-2br8mp9d','compute/clusters/0506-135347-6f7nu1s','compute/clusters/0302-162124-3tonkssh','compute/clusters/0325-135442-4sexw62d','jobs/1060879989389256','jobs/179785376153418','compute/clusters/0131-214851-ld4rsxv9','jobs/947797074375169','jobs/990031306117535','jobs/514650731549945','jobs/38954163915483','compute/clusters/0326-161013-5swqf2pl','jobs/244865951581185','jobs/705264854694377','jobs/358614874734949','jobs/85304385831480','compute/clusters/0506-135347-6f7nu1s1','jobs/507602322602250','jobs/991719229836706','jobs/260321256170389','jobs/659160384728597','jobs/392305391273751') and CostGroup2 is NULL; 
+where 
+(workspace_id ='7509956532948377' OR
+entity_id IN(
+  'compute/vector-search/vector-search-demo-endpoint',
+  'compute/vector-search/test_brief_endpoint',
+  'compute/vector-search/test_briefs_endpoint',
+  'jobs/961502527905828',
+  'compute/clusters/0112-170613-wq6sctxg',
+  'compute/clusters/0328-140330-c0355dg5',
+  'compute/clusters/0508-180925-vfjo0jyj',
+  'compute/clusters/0408-151606-8qnbozcy',
+  'compute/clusters/0308-190556-4ctsuiuh',
+  'compute/clusters/0512-180043-2br8mp9d',
+  'compute/clusters/0506-135347-6f7nu1s',
+  'compute/clusters/0302-162124-3tonkssh',
+  'compute/clusters/0325-135442-4sexw62d',
+  'compute/clusters/0612-194941-5buc9mw9',
+  'compute/clusters/0620-142009-18zk043e',
+  'compute/clusters/1019-211002-qy4tcd5q',
+  'compute/clusters/0626-192717-srukmbdj',
+  'compute/clusters/0626-174134-8m8w0bh5',
+  'jobs/1060879989389256',
+  'jobs/179785376153418',
+  'compute/clusters/0131-214851-ld4rsxv9',
+  'jobs/947797074375169',
+  'jobs/990031306117535',
+  'jobs/514650731549945',
+  'jobs/38954163915483',
+  'compute/clusters/0326-161013-5swqf2pl',
+  'jobs/244865951581185','jobs/705264854694377','jobs/358614874734949','jobs/85304385831480','compute/clusters/0506-135347-6f7nu1s1','jobs/507602322602250','jobs/991719229836706','jobs/260321256170389','jobs/659160384728597','jobs/392305391273751')) and CostGroup2 is NULL; 
 
 
 update costusage.${environment}_usage.fact_dbrusage set  CostGroup1 = 'DATABRICKS-US',CostGroup2 = 'PAS-US-DATABRICKS', Agency ='PMX'
-where entity_id like '%fdad88a1-3fad-489e-bb30-2a548bec3461'
-or entity_id in('jobs/319299244964279','jobs/225068839607863','jobs/421086402362351','jobs/535964478789572','jobs/189446756530471','jobs/423171645528900','jobs/491239544707586','jobs/131568715132866','jobs/740588666973468','jobs/882247704898967','jobs/39512403186443','jobs/997615897566422','jobs/402181099492590','jobs/662192930665737','jobs/226970914059696','jobs/239645347448950','jobs/615337332430672','jobs/416518544878121','jobs/18612505372114','jobs/410540409793420','compute/clusters/0311-161025-5kmfs88b','jobs/858862069306772','jobs/915694970603697','jobs/446541587027532','jobs/1055711113155033','jobs/188705887503938') and CostGroup2 is NULL; 
+where (entity_id like '%fdad88a1-3fad-489e-bb30-2a548bec3461'
+or entity_id like '%#notebook%'
+or entity_id in(
+  'compute/clusters/0311-161025-5kmfs88b',
+  'compute/clusters/0501-190742-lo6ijwfb',
+  'compute/clusters/0617-055550-iq8wqonb',
+  'compute/clusters/0619-123614-efedyrxo',
+  'compute/clusters/0620-140337-g12r6zxu',
+  'compute/clusters/0625-181215-p2vmla53',
+  'compute/clusters/0626-000224-oa4c518v',
+  'compute/clusters/0626-015844-tc49j1rn',
+  'compute/clusters/1018-132419-n4mrwb50',
+  'compute/clusters/1017-132528-asb7xypf',
+  'compute/clusters/0911-165937-28rwngvv',
+  'compute/clusters/0627-021552-yhd47op6',
+  'compute/clusters/0626-163436-8apa97av',
+  'compute/clusters/0626-131359-ouvpg8f',
+  'compute/clusters/0626-090348-kmndh77e',
+
+  'jobs/319299244964279','jobs/225068839607863','jobs/421086402362351','jobs/535964478789572','jobs/189446756530471','jobs/423171645528900','jobs/491239544707586','jobs/131568715132866','jobs/740588666973468','jobs/882247704898967','jobs/39512403186443','jobs/997615897566422','jobs/402181099492590','jobs/662192930665737','jobs/226970914059696','jobs/239645347448950','jobs/615337332430672','jobs/416518544878121','jobs/18612505372114','jobs/410540409793420','jobs/858862069306772','jobs/915694970603697','jobs/446541587027532','jobs/1055711113155033','jobs/188705887503938')) and CostGroup2 is NULL; 
+
+update costusage.${environment}_usage.fact_dbrusage set  CostGroup1 = 'DATABRICKS-US',CostGroup2 = 'PAS-US-DATABRICKS', Agency ='PMX'
+where entity_id IN(  'sql/warehouses/5af5faa4850156e2',
+  'sql/warehouses/69de5369af824c8c') ; 
+
+update costusage.${environment}_usage.fact_dbrusage set  CostGroup1 = 'DATABRICKS-US',CostGroup2 = 'GROWTHOS-US-DATABRICKS', Agency ='GOS',Project ='Audience'
+where entity_id IN(  'sql/warehouses/55b5e94c90f6d9f4',
+  'sql/warehouses/c7c80d5754534e8d') ; 
+
+
 
 update costusage.${environment}_usage.fact_dbrusage set  CostGroup1 = 'DATABRICKS-US',CostGroup2 = 'CMS-US-DATABRICKS', Agency ='DTI'
 where entity_id IN('compute/clusters/1007-073516-ziz3hxfr','compute/clusters/0710-170817-uhbwjoe1') and CostGroup2 is NULL; 
 
-
-
-
 update costusage.${environment}_usage.fact_dbrusage set  CostGroup1 = 'DATABRICKS-US',CostGroup2 = 'DPR-US-DATABRICKS', Agency ='DTI'
 where entity_id IN('compute/clusters/0531-145419-i5sgq8z7') and CostGroup2 is NULL; 
+
+--zenith but not charge
+update costusage.${environment}_usage.fact_dbrusage set  CostGroup1 = 'DATABRICKS-US',CostGroup2 = 'ZENITH-US-DATABRICKS', Agency ='ZENITH'
+where entity_id IN('compute/clusters/0404-211716-fny9ow4') and CostGroup2 is NULL; 
 
 select * from costusage.${environment}_usage.fact_dbrusage where sku_name ='ENTERPRISE_ALL_PURPOSE_SERVERLESS_COMPUTE_US_EAST_N_VIRGINIA';
 
 update costusage.${environment}_usage.fact_dbrusage
 set entity_type='COMPUTE SERVERLESS'
 where sku_name ='ENTERPRISE_ALL_PURPOSE_SERVERLESS_COMPUTE_US_EAST_N_VIRGINIA';
-
-
 
 UPDATE costusage.${environment}_usage.fact_dbrusage
 SET usage_cost = usage_quantity*sku_listed_rate
